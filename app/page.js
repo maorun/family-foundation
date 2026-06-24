@@ -334,13 +334,16 @@ export default function Home() {
     }
   }, []);
 
-  // Persist values to localStorage whenever they change
+  // Persist values to localStorage whenever they change (debounced to 300 ms)
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ formValues, surplusToRepayment }));
-    } catch {
-      // ignore storage errors
-    }
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ formValues, surplusToRepayment }));
+      } catch {
+        // ignore storage errors
+      }
+    }, 300);
+    return () => clearTimeout(timer);
   }, [formValues, surplusToRepayment]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);

@@ -104,6 +104,24 @@ const ROW_LABELS = {
   personAssetPosition: "Person: Vermögensposition",
 };
 
+const GUV_LABELS = {
+  year: "Jahr",
+  rent: "Mieteinnahmen",
+  adminCost: "Verwaltungskosten",
+  interest: "Darlehenszinsen",
+  depreciation: "AfA",
+  result: "Jahresüberschuss/-fehlbetrag",
+};
+
+const BILANZ_LABELS = {
+  year: "Jahr",
+  buildingBookValue: "Immobilie (Buchwert)",
+  cash: "Liquidität",
+  totalAssets: "Bilanzsumme",
+  loan: "Darlehen",
+  equity: "Eigenkapital",
+};
+
 const currency = new Intl.NumberFormat("de-DE", {
   style: "currency",
   currency: "EUR",
@@ -196,6 +214,8 @@ function calculateProjection(input) {
   let remainingDepreciableBuildingValue = input.buildingValue;
   let cumulativePersonNetCash = 0;
 
+  const buildingBookValue0 = input.buildingValue + input.landValue;
+
   const rows = [
     {
       year: 0,
@@ -205,6 +225,10 @@ function calculateProjection(input) {
       remainingLoan,
       personNetCashFlow: 0,
       personAssetPosition: remainingLoan,
+      // Bilanz Jahr 0
+      buildingBookValue: buildingBookValue0,
+      totalAssets: foundationCash + buildingBookValue0,
+      equity: foundationCash + buildingBookValue0 - remainingLoan,
     },
   ];
 
@@ -228,17 +252,25 @@ function calculateProjection(input) {
       input.annualAdminCost -
       annualInterest -
       scheduledRepayment;
+
+    // Jährlichen Überschuss als Sondertilgung verwenden
+    const extraRepayment = input.surplusToRepayment
+      ? Math.max(0, Math.min(foundationCashFlow, remainingLoan - scheduledRepayment))
+      : 0;
+
     const lenderTax = annualInterest * input.personalTaxRate;
     const lenderNetCashFlow =
-      scheduledRepayment + (annualInterest - lenderTax);
+      scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
-    foundationCash += foundationCashFlow;
-    remainingLoan -= scheduledRepayment;
+    foundationCash += foundationCashFlow - extraRepayment;
+    remainingLoan -= scheduledRepayment + extraRepayment;
     remainingDepreciableBuildingValue = Math.max(
       0,
       remainingDepreciableBuildingValue - annualDepreciation,
     );
     cumulativePersonNetCash += lenderNetCashFlow;
+
+    const buildingBookValue = remainingDepreciableBuildingValue + input.landValue;
 
     rows.push({
       year,
@@ -248,6 +280,16 @@ function calculateProjection(input) {
       remainingLoan,
       personNetCashFlow: lenderNetCashFlow,
       personAssetPosition: remainingLoan + cumulativePersonNetCash,
+      // GuV
+      guvRent: annualRent,
+      guvAdminCost: input.annualAdminCost,
+      guvInterest: annualInterest,
+      guvDepreciation: annualDepreciation,
+      guvResult: taxableResult,
+      // Bilanz
+      buildingBookValue,
+      totalAssets: foundationCash + buildingBookValue,
+      equity: foundationCash + buildingBookValue - remainingLoan,
     });
   }
 
@@ -262,7 +304,7 @@ function calculateProjection(input) {
   };
 }
 
-const DEFAULT_RESULT = calculateProjection(validateFormValues(DEFAULT_FORM_VALUES).input);
+const DEFAULT_RESULT = calculateProjection({ ...validateFormValues(DEFAULT_FORM_VALUES).input, surplusToRepayment: false });
 
 function ServiceWorkerRegistration() {
   useEffect(() => {
@@ -282,8 +324,9 @@ function ServiceWorkerRegistration() {
 }
 
 export default function Home() {
-  const [{ formValues, result }, setState] = useState({
+  const [{ formValues, surplusToRepayment, result }, setState] = useState({
     formValues: DEFAULT_FORM_VALUES,
+    surplusToRepayment: false,
     result: DEFAULT_RESULT,
   });
 
@@ -345,9 +388,23 @@ export default function Home() {
       const nextValidation = validateFormValues(nextFormValues);
 
       return {
+        ...currentState,
         formValues: nextFormValues,
         result: nextValidation.input
-          ? calculateProjection(nextValidation.input)
+          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: currentState.surplusToRepayment })
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleSurplusToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(currentState.formValues);
+      return {
+        ...currentState,
+        surplusToRepayment: checked,
+        result: nextValidation.input
+          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: checked })
           : currentState.result,
       };
     });
@@ -416,6 +473,18 @@ export default function Home() {
               die zuletzt gültigen Ergebnisse sichtbar.
             </p>
           ) : null}
+          <div className={styles.checkboxRow}>
+            <input
+              id="surplusToRepayment"
+              type="checkbox"
+              checked={surplusToRepayment}
+              onChange={(event) => handleSurplusToggle(event.target.checked)}
+              className={styles.checkbox}
+            />
+            <label htmlFor="surplusToRepayment" className={styles.checkboxLabel}>
+              Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
+            </label>
+          </div>
           <p className={styles.hint}>
             Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom
             ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige
@@ -482,6 +551,81 @@ export default function Home() {
             Grundstück. Die AfA wirkt nur auf das steuerliche Ergebnis. Die
             Vermögensposition der Person setzt sich aus Restforderung und bereits
             zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen.
+          </p>
+
+          <h3 className={styles.tableSubtitle}>GuV-Rechnung</h3>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead className={styles.tableHead}>
+                <tr>
+                  <th>{GUV_LABELS.year}</th>
+                  <th>{GUV_LABELS.rent}</th>
+                  <th>{GUV_LABELS.adminCost}</th>
+                  <th>{GUV_LABELS.interest}</th>
+                  <th>{GUV_LABELS.depreciation}</th>
+                  <th>{GUV_LABELS.result}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.filter((row) => row.year > 0).map((row) => (
+                  <tr key={row.year}>
+                    <td data-label={GUV_LABELS.year}>{row.year}</td>
+                    <td data-label={GUV_LABELS.rent}>{formatCurrency(row.guvRent)}</td>
+                    <td data-label={GUV_LABELS.adminCost}>{formatCurrency(row.guvAdminCost)}</td>
+                    <td data-label={GUV_LABELS.interest}>{formatCurrency(row.guvInterest)}</td>
+                    <td data-label={GUV_LABELS.depreciation}>{formatCurrency(row.guvDepreciation)}</td>
+                    <td
+                      data-label={GUV_LABELS.result}
+                      className={row.guvResult < 0 ? styles.negative : styles.positive}
+                    >
+                      {formatCurrency(row.guvResult)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={styles.hint}>
+            Die GuV zeigt das steuerliche Ergebnis: Mieteinnahmen abzüglich Verwaltungskosten,
+            Darlehenszinsen und AfA. Tilgungszahlungen sind kein GuV-Posten.
+          </p>
+
+          <h3 className={styles.tableSubtitle}>Bilanz</h3>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead className={styles.tableHead}>
+                <tr>
+                  <th>{BILANZ_LABELS.year}</th>
+                  <th>{BILANZ_LABELS.buildingBookValue}</th>
+                  <th>{BILANZ_LABELS.cash}</th>
+                  <th>{BILANZ_LABELS.totalAssets}</th>
+                  <th>{BILANZ_LABELS.loan}</th>
+                  <th>{BILANZ_LABELS.equity}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row) => (
+                  <tr key={row.year}>
+                    <td data-label={BILANZ_LABELS.year}>{row.year}</td>
+                    <td data-label={BILANZ_LABELS.buildingBookValue}>{formatCurrency(row.buildingBookValue)}</td>
+                    <td data-label={BILANZ_LABELS.cash}>{formatCurrency(row.foundationCash)}</td>
+                    <td data-label={BILANZ_LABELS.totalAssets}>{formatCurrency(row.totalAssets)}</td>
+                    <td data-label={BILANZ_LABELS.loan}>{formatCurrency(row.remainingLoan)}</td>
+                    <td
+                      data-label={BILANZ_LABELS.equity}
+                      className={row.equity < 0 ? styles.negative : styles.positive}
+                    >
+                      {formatCurrency(row.equity)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={styles.hint}>
+            Aktiva: Immobilien-Buchwert (Gebäude nach AfA + Grundstück) + Liquidität.
+            Passiva: Darlehen + Eigenkapital. Der Buchwert des Grundstücks bleibt konstant;
+            das Gebäude wird jährlich um die AfA abgeschrieben.
           </p>
         </section>
       </main>

@@ -148,6 +148,41 @@
   background: #e2e8f0;
 }
 
+.negative {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.positive {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.tableSubtitle {
+  margin: 20px 0 8px;
+  font-size: 1.1rem;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  accent-color: #0f4c81;
+}
+
+.checkboxLabel {
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @media (max-width: 900px) {
   .page {
     padding: 16px;

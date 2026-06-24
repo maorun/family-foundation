@@ -286,6 +286,8 @@ const DEFAULT_RESULT = calculateProjection({
   surplusToRepayment: false,
 });
 
+const STORAGE_KEY = "familienstiftung-rechner-v1";
+
 function ServiceWorkerRegistration() {
   useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) {
@@ -309,6 +311,40 @@ export default function Home() {
     surplusToRepayment: false,
     result: DEFAULT_RESULT,
   });
+
+  // Load saved values from localStorage on first mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      const nextFormValues = { ...DEFAULT_FORM_VALUES, ...parsed.formValues };
+      const nextSurplusToRepayment = parsed.surplusToRepayment ?? false;
+      const nextValidation = validateFormValues(nextFormValues);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setState({
+        formValues: nextFormValues,
+        surplusToRepayment: nextSurplusToRepayment,
+        result: nextValidation.input
+          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: nextSurplusToRepayment })
+          : DEFAULT_RESULT,
+      });
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  // Persist values to localStorage whenever they change (debounced to 300 ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ formValues, surplusToRepayment }));
+      } catch {
+        // ignore storage errors
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [formValues, surplusToRepayment]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
   const hasInvalidFields = validation.invalidIds.length > 0;

@@ -536,12 +536,19 @@ export default function Home() {
                   <h4 className={styles.yearSectionTitle}>Übersicht</h4>
                   <dl className={styles.dataGrid}>
                     <div className={styles.dataItem}>
-                      <dt>{row.year > 0 ? "Stiftung: Jährl. Liquiditätsüberschuss" : "Stiftung: Startliquidität"}</dt>
-                      <dd className={row.year > 0
-                        ? (row.foundationCashFlow < 0 ? styles.negative : styles.positive)
-                        : undefined}>
-                        {formatCurrency(row.year > 0 ? row.foundationCashFlow : row.foundationCash)}
-                      </dd>
+                      {row.year > 0 ? (
+                        <>
+                          <dt>Stiftung: Jährl. Liquiditätsüberschuss</dt>
+                          <dd className={row.foundationCashFlow < 0 ? styles.negative : styles.positive}>
+                            {formatCurrency(row.foundationCashFlow)}
+                          </dd>
+                        </>
+                      ) : (
+                        <>
+                          <dt>Stiftung: Startliquidität</dt>
+                          <dd>{formatCurrency(row.foundationCash)}</dd>
+                        </>
+                      )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Steuerliches Ergebnis</dt>

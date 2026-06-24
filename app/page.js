@@ -220,22 +220,23 @@ function calculateProjection(input) {
       input.annualAdminCost -
       annualInterest -
       annualDepreciation;
+    // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
+    // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
     const foundationCashFlow =
       annualRent -
       input.annualAdminCost -
-      annualInterest -
-      scheduledRepayment;
+      annualInterest;
 
     // Jährlichen Überschuss als Sondertilgung verwenden
     const extraRepayment = input.surplusToRepayment
-      ? Math.min(Math.max(0, foundationCashFlow), remainingLoan - scheduledRepayment)
+      ? Math.min(Math.max(0, foundationCashFlow - scheduledRepayment), remainingLoan - scheduledRepayment)
       : 0;
 
     const lenderTax = annualInterest * input.personalTaxRate;
     const lenderNetCashFlow =
       scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
-    foundationCash += foundationCashFlow - extraRepayment;
+    foundationCash += foundationCashFlow - scheduledRepayment - extraRepayment;
     remainingLoan -= scheduledRepayment + extraRepayment;
     remainingDepreciableBuildingValue = Math.max(
       0,
@@ -248,6 +249,7 @@ function calculateProjection(input) {
     rows.push({
       year,
       foundationCash,
+      foundationCashFlow,
       taxableResult,
       foundationWealth: foundationCash + propertyValue - remainingLoan,
       remainingLoan,
@@ -381,7 +383,7 @@ export default function Home() {
     {
       title: "Stiftung: Nettovermögen Jahr 1",
       value: formatCurrency(firstYear.foundationWealth),
-      detail: `Liquidität ${formatCurrency(firstYear.foundationCash)}`,
+      detail: `Liquiditätsüberschuss ${formatCurrency(firstYear.foundationCashFlow)}`,
     },
     {
       title: `Stiftung: Nettovermögen Jahr ${result.input.projectionYears}`,
@@ -534,8 +536,19 @@ export default function Home() {
                   <h4 className={styles.yearSectionTitle}>Übersicht</h4>
                   <dl className={styles.dataGrid}>
                     <div className={styles.dataItem}>
-                      <dt>Stiftung: Liquidität</dt>
-                      <dd>{formatCurrency(row.foundationCash)}</dd>
+                      {row.year > 0 ? (
+                        <>
+                          <dt>Stiftung: Jährl. Liquiditätsüberschuss</dt>
+                          <dd className={row.foundationCashFlow < 0 ? styles.negative : styles.positive}>
+                            {formatCurrency(row.foundationCashFlow)}
+                          </dd>
+                        </>
+                      ) : (
+                        <>
+                          <dt>Stiftung: Startliquidität</dt>
+                          <dd>{formatCurrency(row.foundationCash)}</dd>
+                        </>
+                      )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Steuerliches Ergebnis</dt>
@@ -622,7 +635,7 @@ export default function Home() {
                       <dd>{formatCurrency(row.buildingBookValue)}</dd>
                     </div>
                     <div className={styles.dataItem}>
-                      <dt>Liquidität</dt>
+                      <dt>Kassenbestand</dt>
                       <dd>{formatCurrency(row.foundationCash)}</dd>
                     </div>
                     <div className={styles.dataItem}>

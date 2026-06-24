@@ -163,6 +163,11 @@
   font-size: 1.1rem;
 }
 
+.tableGroupHeader {
+  text-align: center;
+  border-left: 2px solid #cbd5e1;
+}
+
 .checkboxRow {
   display: flex;
   align-items: center;

@@ -570,17 +570,24 @@ export default function Home() {
             zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen.
           </p>
 
-          <h3 className={styles.tableSubtitle}>GuV-Rechnung – Stiftung</h3>
+          <h3 className={styles.tableSubtitle}>GuV-Rechnung</h3>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead className={styles.tableHead}>
                 <tr>
-                  <th>{GUV_STIFTUNG_LABELS.year}</th>
+                  <th rowSpan={2}>{GUV_STIFTUNG_LABELS.year}</th>
+                  <th colSpan={5} className={styles.tableGroupHeader}>Stiftung</th>
+                  <th colSpan={3} className={styles.tableGroupHeader}>Darlehens-Person</th>
+                </tr>
+                <tr>
                   <th>{GUV_STIFTUNG_LABELS.rent}</th>
                   <th>{GUV_STIFTUNG_LABELS.adminCost}</th>
                   <th>{GUV_STIFTUNG_LABELS.interest}</th>
                   <th>{GUV_STIFTUNG_LABELS.depreciation}</th>
                   <th>{GUV_STIFTUNG_LABELS.result}</th>
+                  <th>{GUV_PERSON_LABELS.interest}</th>
+                  <th>{GUV_PERSON_LABELS.tax}</th>
+                  <th>{GUV_PERSON_LABELS.result}</th>
                 </tr>
               </thead>
               <tbody>
@@ -597,31 +604,6 @@ export default function Home() {
                     >
                       {formatCurrency(row.guvResult)}
                     </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className={styles.hint}>
-            Die GuV zeigt das steuerliche Ergebnis: Mieteinnahmen abzüglich Verwaltungskosten,
-            Darlehenszinsen und AfA. Tilgungszahlungen sind kein GuV-Posten.
-          </p>
-
-          <h3 className={styles.tableSubtitle}>GuV-Rechnung – Darlehens-Person</h3>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr>
-                  <th>{GUV_PERSON_LABELS.year}</th>
-                  <th>{GUV_PERSON_LABELS.interest}</th>
-                  <th>{GUV_PERSON_LABELS.tax}</th>
-                  <th>{GUV_PERSON_LABELS.result}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.filter((row) => row.year > 0).map((row) => (
-                  <tr key={row.year}>
-                    <td data-label={GUV_PERSON_LABELS.year}>{row.year}</td>
                     <td data-label={GUV_PERSON_LABELS.interest}>{formatCurrency(row.personGuvInterest)}</td>
                     <td data-label={GUV_PERSON_LABELS.tax}>{formatCurrency(row.personGuvTax)}</td>
                     <td
@@ -636,8 +618,9 @@ export default function Home() {
             </table>
           </div>
           <p className={styles.hint}>
-            Zinserträge der Person aus dem Darlehen, abzüglich Einkommensteuer zum persönlichen
-            Steuersatz. Tilgungsrückflüsse sind kein GuV-Posten.
+            Die GuV zeigt das steuerliche Ergebnis der Stiftung (Mieteinnahmen abzüglich
+            Verwaltungskosten, Darlehenszinsen und AfA) sowie die Zinserträge der
+            Darlehens-Person nach Einkommensteuer. Tilgungszahlungen sind kein GuV-Posten.
           </p>
 
           <h3 className={styles.tableSubtitle}>Bilanz</h3>

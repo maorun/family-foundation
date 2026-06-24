@@ -329,20 +329,15 @@
       }
 
       function calculateProjection(input) {
-        const normalizedInput = { ...input };
-
-        const propertyValue = normalizedInput.buildingValue + normalizedInput.landValue;
-        const annualRent = normalizedInput.monthlyRent * 12;
-        const giftTax = normalizedInput.initialCapital * normalizedInput.giftTaxRate;
+        const propertyValue = input.buildingValue + input.landValue;
+        const annualRent = input.monthlyRent * 12;
+        const giftTax = input.initialCapital * input.giftTaxRate;
         const initialCash =
-          normalizedInput.initialCapital -
-          giftTax +
-          normalizedInput.loanAmount -
-          propertyValue;
+          input.initialCapital - giftTax + input.loanAmount - propertyValue;
 
         let foundationCash = initialCash;
-        let remainingLoan = normalizedInput.loanAmount;
-        let remainingDepreciableBuildingValue = normalizedInput.buildingValue;
+        let remainingLoan = input.loanAmount;
+        let remainingDepreciableBuildingValue = input.buildingValue;
         let cumulativePersonNetCash = 0;
 
         const rows = [
@@ -357,33 +352,35 @@
           },
         ];
 
-        for (let year = 1; year <= normalizedInput.projectionYears; year += 1) {
-          const annualInterest = remainingLoan * normalizedInput.loanInterestRate;
+        for (let year = 1; year <= input.projectionYears; year += 1) {
+          const annualInterest = remainingLoan * input.loanInterestRate;
           // The model uses constant repayment based on the original loan amount.
+          // Math.min caps the last repayment at the remaining balance.
           const scheduledRepayment = Math.min(
             remainingLoan,
-            normalizedInput.loanAmount * normalizedInput.loanRepaymentRate
+            input.loanAmount * input.loanRepaymentRate
           );
           const annualDepreciation = Math.min(
             remainingDepreciableBuildingValue,
-            normalizedInput.buildingValue * normalizedInput.depreciationRate
+            input.buildingValue * input.depreciationRate
           );
           const taxableResult =
             annualRent -
-            normalizedInput.annualAdminCost -
+            input.annualAdminCost -
             annualInterest -
             annualDepreciation;
           const foundationCashFlow =
             annualRent -
-            normalizedInput.annualAdminCost -
+            input.annualAdminCost -
             annualInterest -
             scheduledRepayment;
-          const lenderTax = annualInterest * normalizedInput.personalTaxRate;
+          const lenderTax = annualInterest * input.personalTaxRate;
           const lenderNetCashFlow =
             scheduledRepayment + (annualInterest - lenderTax);
 
           foundationCash += foundationCashFlow;
           remainingLoan -= scheduledRepayment;
+          // Math.max stops depreciation once the building is fully written down.
           remainingDepreciableBuildingValue = Math.max(
             0,
             remainingDepreciableBuildingValue - annualDepreciation
@@ -402,13 +399,12 @@
         }
 
         return {
-          input: normalizedInput,
+          input,
           annualRent,
           giftTax,
           propertyValue,
           initialCash,
-          annualDepreciationBase:
-            normalizedInput.buildingValue * normalizedInput.depreciationRate,
+          annualDepreciationBase: input.buildingValue * input.depreciationRate,
           rows,
         };
       }
@@ -506,6 +502,9 @@
         }
 
         const result = calculateProjection(input);
+        if (result.rows.length < 2) {
+          return;
+        }
         renderSummary(result);
         renderTable(result);
       }

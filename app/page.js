@@ -255,7 +255,7 @@ function calculateProjection(input) {
 
     // Jährlichen Überschuss als Sondertilgung verwenden
     const extraRepayment = input.surplusToRepayment
-      ? Math.max(0, Math.min(foundationCashFlow, remainingLoan - scheduledRepayment))
+      ? Math.min(Math.max(0, foundationCashFlow), remainingLoan - scheduledRepayment)
       : 0;
 
     const lenderTax = annualInterest * input.personalTaxRate;
@@ -304,7 +304,10 @@ function calculateProjection(input) {
   };
 }
 
-const DEFAULT_RESULT = calculateProjection({ ...validateFormValues(DEFAULT_FORM_VALUES).input, surplusToRepayment: false });
+const DEFAULT_RESULT = calculateProjection({
+  ...validateFormValues(DEFAULT_FORM_VALUES).input,
+  surplusToRepayment: false,
+});
 
 function ServiceWorkerRegistration() {
   useEffect(() => {
@@ -391,7 +394,10 @@ export default function Home() {
         ...currentState,
         formValues: nextFormValues,
         result: nextValidation.input
-          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: currentState.surplusToRepayment })
+          ? calculateProjection({
+              ...nextValidation.input,
+              surplusToRepayment: currentState.surplusToRepayment,
+            })
           : currentState.result,
       };
     });

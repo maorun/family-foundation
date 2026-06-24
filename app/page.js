@@ -104,13 +104,20 @@ const ROW_LABELS = {
   personAssetPosition: "Person: Vermögensposition",
 };
 
-const GUV_LABELS = {
+const GUV_STIFTUNG_LABELS = {
   year: "Jahr",
   rent: "Mieteinnahmen",
   adminCost: "Verwaltungskosten",
   interest: "Darlehenszinsen",
   depreciation: "AfA",
   result: "Jahresüberschuss/-fehlbetrag",
+};
+
+const GUV_PERSON_LABELS = {
+  year: "Jahr",
+  interest: "Zinserträge",
+  tax: "Einkommensteuer auf Zinsen",
+  result: "Netto-Zinsergebnis",
 };
 
 const BILANZ_LABELS = {
@@ -280,12 +287,16 @@ function calculateProjection(input) {
       remainingLoan,
       personNetCashFlow: lenderNetCashFlow,
       personAssetPosition: remainingLoan + cumulativePersonNetCash,
-      // GuV
+      // GuV Stiftung
       guvRent: annualRent,
       guvAdminCost: input.annualAdminCost,
       guvInterest: annualInterest,
       guvDepreciation: annualDepreciation,
       guvResult: taxableResult,
+      // GuV Person
+      personGuvInterest: annualInterest,
+      personGuvTax: lenderTax,
+      personGuvResult: annualInterest - lenderTax,
       // Bilanz
       buildingBookValue,
       totalAssets: foundationCash + buildingBookValue,
@@ -559,29 +570,29 @@ export default function Home() {
             zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen.
           </p>
 
-          <h3 className={styles.tableSubtitle}>GuV-Rechnung</h3>
+          <h3 className={styles.tableSubtitle}>GuV-Rechnung – Stiftung</h3>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead className={styles.tableHead}>
                 <tr>
-                  <th>{GUV_LABELS.year}</th>
-                  <th>{GUV_LABELS.rent}</th>
-                  <th>{GUV_LABELS.adminCost}</th>
-                  <th>{GUV_LABELS.interest}</th>
-                  <th>{GUV_LABELS.depreciation}</th>
-                  <th>{GUV_LABELS.result}</th>
+                  <th>{GUV_STIFTUNG_LABELS.year}</th>
+                  <th>{GUV_STIFTUNG_LABELS.rent}</th>
+                  <th>{GUV_STIFTUNG_LABELS.adminCost}</th>
+                  <th>{GUV_STIFTUNG_LABELS.interest}</th>
+                  <th>{GUV_STIFTUNG_LABELS.depreciation}</th>
+                  <th>{GUV_STIFTUNG_LABELS.result}</th>
                 </tr>
               </thead>
               <tbody>
                 {result.rows.filter((row) => row.year > 0).map((row) => (
                   <tr key={row.year}>
-                    <td data-label={GUV_LABELS.year}>{row.year}</td>
-                    <td data-label={GUV_LABELS.rent}>{formatCurrency(row.guvRent)}</td>
-                    <td data-label={GUV_LABELS.adminCost}>{formatCurrency(row.guvAdminCost)}</td>
-                    <td data-label={GUV_LABELS.interest}>{formatCurrency(row.guvInterest)}</td>
-                    <td data-label={GUV_LABELS.depreciation}>{formatCurrency(row.guvDepreciation)}</td>
+                    <td data-label={GUV_STIFTUNG_LABELS.year}>{row.year}</td>
+                    <td data-label={GUV_STIFTUNG_LABELS.rent}>{formatCurrency(row.guvRent)}</td>
+                    <td data-label={GUV_STIFTUNG_LABELS.adminCost}>{formatCurrency(row.guvAdminCost)}</td>
+                    <td data-label={GUV_STIFTUNG_LABELS.interest}>{formatCurrency(row.guvInterest)}</td>
+                    <td data-label={GUV_STIFTUNG_LABELS.depreciation}>{formatCurrency(row.guvDepreciation)}</td>
                     <td
-                      data-label={GUV_LABELS.result}
+                      data-label={GUV_STIFTUNG_LABELS.result}
                       className={row.guvResult < 0 ? styles.negative : styles.positive}
                     >
                       {formatCurrency(row.guvResult)}
@@ -594,6 +605,39 @@ export default function Home() {
           <p className={styles.hint}>
             Die GuV zeigt das steuerliche Ergebnis: Mieteinnahmen abzüglich Verwaltungskosten,
             Darlehenszinsen und AfA. Tilgungszahlungen sind kein GuV-Posten.
+          </p>
+
+          <h3 className={styles.tableSubtitle}>GuV-Rechnung – Darlehens-Person</h3>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead className={styles.tableHead}>
+                <tr>
+                  <th>{GUV_PERSON_LABELS.year}</th>
+                  <th>{GUV_PERSON_LABELS.interest}</th>
+                  <th>{GUV_PERSON_LABELS.tax}</th>
+                  <th>{GUV_PERSON_LABELS.result}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.filter((row) => row.year > 0).map((row) => (
+                  <tr key={row.year}>
+                    <td data-label={GUV_PERSON_LABELS.year}>{row.year}</td>
+                    <td data-label={GUV_PERSON_LABELS.interest}>{formatCurrency(row.personGuvInterest)}</td>
+                    <td data-label={GUV_PERSON_LABELS.tax}>{formatCurrency(row.personGuvTax)}</td>
+                    <td
+                      data-label={GUV_PERSON_LABELS.result}
+                      className={row.personGuvResult < 0 ? styles.negative : styles.positive}
+                    >
+                      {formatCurrency(row.personGuvResult)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={styles.hint}>
+            Zinserträge der Person aus dem Darlehen, abzüglich Einkommensteuer zum persönlichen
+            Steuersatz. Tilgungsrückflüsse sind kein GuV-Posten.
           </p>
 
           <h3 className={styles.tableSubtitle}>Bilanz</h3>

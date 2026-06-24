@@ -94,40 +94,6 @@ const FIELD_DEFINITIONS = [
   },
 ];
 
-const ROW_LABELS = {
-  year: "Jahr",
-  foundationCash: "Stiftung: Liquidität",
-  taxableResult: "Stiftung: Steuerliches Ergebnis",
-  foundationWealth: "Stiftung: Nettovermögen",
-  remainingLoan: "Restdarlehen",
-  personNetCashFlow: "Person: Netto-Zufluss",
-  personAssetPosition: "Person: Vermögensposition",
-};
-
-const GUV_STIFTUNG_LABELS = {
-  year: "Jahr",
-  rent: "Mieteinnahmen",
-  adminCost: "Verwaltungskosten",
-  interest: "Darlehenszinsen",
-  depreciation: "AfA",
-  result: "Jahresüberschuss/-fehlbetrag",
-};
-
-const GUV_PERSON_LABELS = {
-  year: "Jahr",
-  interest: "Zinserträge",
-  tax: "Einkommensteuer auf Zinsen",
-  result: "Netto-Zinsergebnis",
-};
-
-const BILANZ_LABELS = {
-  year: "Jahr",
-  buildingBookValue: "Immobilie (Buchwert)",
-  cash: "Liquidität",
-  totalAssets: "Bilanzsumme",
-  loan: "Darlehen",
-  equity: "Eigenkapital",
-};
 
 const currency = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -523,142 +489,130 @@ export default function Home() {
 
         <section className={styles.panel}>
           <h2>Jahresübersicht</h2>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr>
-                  <th>{ROW_LABELS.year}</th>
-                  <th>{ROW_LABELS.foundationCash}</th>
-                  <th>{ROW_LABELS.taxableResult}</th>
-                  <th>{ROW_LABELS.foundationWealth}</th>
-                  <th>{ROW_LABELS.remainingLoan}</th>
-                  <th>{ROW_LABELS.personNetCashFlow}</th>
-                  <th>{ROW_LABELS.personAssetPosition}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.map((row) => (
-                  <tr key={row.year}>
-                    <td data-label={ROW_LABELS.year}>{row.year}</td>
-                    <td data-label={ROW_LABELS.foundationCash}>
-                      {formatCurrency(row.foundationCash)}
-                    </td>
-                    <td data-label={ROW_LABELS.taxableResult}>
-                      {formatCurrency(row.taxableResult)}
-                    </td>
-                    <td data-label={ROW_LABELS.foundationWealth}>
-                      {formatCurrency(row.foundationWealth)}
-                    </td>
-                    <td data-label={ROW_LABELS.remainingLoan}>
-                      {formatCurrency(row.remainingLoan)}
-                    </td>
-                    <td data-label={ROW_LABELS.personNetCashFlow}>
-                      {formatCurrency(row.personNetCashFlow)}
-                    </td>
-                    <td data-label={ROW_LABELS.personAssetPosition}>
-                      {formatCurrency(row.personAssetPosition)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className={styles.yearList}>
+            {result.rows.map((row) => (
+              <div key={row.year} className={styles.yearCard}>
+                <h3 className={styles.yearCardTitle}>Jahr {row.year}</h3>
+
+                <div className={styles.yearSection}>
+                  <h4 className={styles.yearSectionTitle}>Übersicht</h4>
+                  <dl className={styles.dataGrid}>
+                    <div className={styles.dataItem}>
+                      <dt>Stiftung: Liquidität</dt>
+                      <dd>{formatCurrency(row.foundationCash)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Stiftung: Steuerliches Ergebnis</dt>
+                      <dd>{formatCurrency(row.taxableResult)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Stiftung: Nettovermögen</dt>
+                      <dd>{formatCurrency(row.foundationWealth)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Restdarlehen</dt>
+                      <dd>{formatCurrency(row.remainingLoan)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Person: Netto-Zufluss</dt>
+                      <dd>{formatCurrency(row.personNetCashFlow)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Person: Vermögensposition</dt>
+                      <dd>{formatCurrency(row.personAssetPosition)}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {row.year > 0 && (
+                  <div className={styles.yearSection}>
+                    <h4 className={styles.yearSectionTitle}>GuV-Rechnung</h4>
+                    <div className={styles.guvColumns}>
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Stiftung</h5>
+                        <dl className={styles.dataGrid}>
+                          <div className={styles.dataItem}>
+                            <dt>Mieteinnahmen</dt>
+                            <dd>{formatCurrency(row.guvRent)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>Verwaltungskosten</dt>
+                            <dd>{formatCurrency(row.guvAdminCost)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>Darlehenszinsen</dt>
+                            <dd>{formatCurrency(row.guvInterest)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>AfA</dt>
+                            <dd>{formatCurrency(row.guvDepreciation)}</dd>
+                          </div>
+                          <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
+                            <dt>Jahresüberschuss/-fehlbetrag</dt>
+                            <dd className={row.guvResult < 0 ? styles.negative : styles.positive}>
+                              {formatCurrency(row.guvResult)}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Darlehens-Person</h5>
+                        <dl className={styles.dataGrid}>
+                          <div className={styles.dataItem}>
+                            <dt>Zinserträge</dt>
+                            <dd>{formatCurrency(row.personGuvInterest)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>Einkommensteuer auf Zinsen</dt>
+                            <dd>{formatCurrency(row.personGuvTax)}</dd>
+                          </div>
+                          <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
+                            <dt>Netto-Zinsergebnis</dt>
+                            <dd className={row.personGuvResult < 0 ? styles.negative : styles.positive}>
+                              {formatCurrency(row.personGuvResult)}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className={styles.yearSection}>
+                  <h4 className={styles.yearSectionTitle}>Bilanz</h4>
+                  <dl className={styles.dataGrid}>
+                    <div className={styles.dataItem}>
+                      <dt>Immobilie (Buchwert)</dt>
+                      <dd>{formatCurrency(row.buildingBookValue)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Liquidität</dt>
+                      <dd>{formatCurrency(row.foundationCash)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Bilanzsumme</dt>
+                      <dd>{formatCurrency(row.totalAssets)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Darlehen</dt>
+                      <dd>{formatCurrency(row.remainingLoan)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Eigenkapital</dt>
+                      <dd className={row.equity < 0 ? styles.negative : styles.positive}>
+                        {formatCurrency(row.equity)}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            ))}
           </div>
           <p className={styles.note}>
             Das Nettovermögen der Stiftung nutzt den Immobilienwert aus Gebäude +
             Grundstück. Die AfA wirkt nur auf das steuerliche Ergebnis. Die
             Vermögensposition der Person setzt sich aus Restforderung und bereits
             zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen.
-          </p>
-
-          <h3 className={styles.tableSubtitle}>GuV-Rechnung</h3>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr>
-                  <th rowSpan={2}>{GUV_STIFTUNG_LABELS.year}</th>
-                  <th colSpan={5} className={styles.tableGroupHeader}>Stiftung</th>
-                  <th colSpan={3} className={styles.tableGroupHeader}>Darlehens-Person</th>
-                </tr>
-                <tr>
-                  <th>{GUV_STIFTUNG_LABELS.rent}</th>
-                  <th>{GUV_STIFTUNG_LABELS.adminCost}</th>
-                  <th>{GUV_STIFTUNG_LABELS.interest}</th>
-                  <th>{GUV_STIFTUNG_LABELS.depreciation}</th>
-                  <th>{GUV_STIFTUNG_LABELS.result}</th>
-                  <th>{GUV_PERSON_LABELS.interest}</th>
-                  <th>{GUV_PERSON_LABELS.tax}</th>
-                  <th>{GUV_PERSON_LABELS.result}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.filter((row) => row.year > 0).map((row) => (
-                  <tr key={row.year}>
-                    <td data-label={GUV_STIFTUNG_LABELS.year}>{row.year}</td>
-                    <td data-label={GUV_STIFTUNG_LABELS.rent}>{formatCurrency(row.guvRent)}</td>
-                    <td data-label={GUV_STIFTUNG_LABELS.adminCost}>{formatCurrency(row.guvAdminCost)}</td>
-                    <td data-label={GUV_STIFTUNG_LABELS.interest}>{formatCurrency(row.guvInterest)}</td>
-                    <td data-label={GUV_STIFTUNG_LABELS.depreciation}>{formatCurrency(row.guvDepreciation)}</td>
-                    <td
-                      data-label={GUV_STIFTUNG_LABELS.result}
-                      className={row.guvResult < 0 ? styles.negative : styles.positive}
-                    >
-                      {formatCurrency(row.guvResult)}
-                    </td>
-                    <td data-label={GUV_PERSON_LABELS.interest}>{formatCurrency(row.personGuvInterest)}</td>
-                    <td data-label={GUV_PERSON_LABELS.tax}>{formatCurrency(row.personGuvTax)}</td>
-                    <td
-                      data-label={GUV_PERSON_LABELS.result}
-                      className={row.personGuvResult < 0 ? styles.negative : styles.positive}
-                    >
-                      {formatCurrency(row.personGuvResult)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className={styles.hint}>
-            Die GuV zeigt das steuerliche Ergebnis der Stiftung (Mieteinnahmen abzüglich
-            Verwaltungskosten, Darlehenszinsen und AfA) sowie die Zinserträge der
-            Darlehens-Person nach Einkommensteuer. Tilgungszahlungen sind kein GuV-Posten.
-          </p>
-
-          <h3 className={styles.tableSubtitle}>Bilanz</h3>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr>
-                  <th>{BILANZ_LABELS.year}</th>
-                  <th>{BILANZ_LABELS.buildingBookValue}</th>
-                  <th>{BILANZ_LABELS.cash}</th>
-                  <th>{BILANZ_LABELS.totalAssets}</th>
-                  <th>{BILANZ_LABELS.loan}</th>
-                  <th>{BILANZ_LABELS.equity}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.map((row) => (
-                  <tr key={row.year}>
-                    <td data-label={BILANZ_LABELS.year}>{row.year}</td>
-                    <td data-label={BILANZ_LABELS.buildingBookValue}>{formatCurrency(row.buildingBookValue)}</td>
-                    <td data-label={BILANZ_LABELS.cash}>{formatCurrency(row.foundationCash)}</td>
-                    <td data-label={BILANZ_LABELS.totalAssets}>{formatCurrency(row.totalAssets)}</td>
-                    <td data-label={BILANZ_LABELS.loan}>{formatCurrency(row.remainingLoan)}</td>
-                    <td
-                      data-label={BILANZ_LABELS.equity}
-                      className={row.equity < 0 ? styles.negative : styles.positive}
-                    >
-                      {formatCurrency(row.equity)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className={styles.hint}>
-            Aktiva: Immobilien-Buchwert (Gebäude nach AfA + Grundstück) + Liquidität.
-            Passiva: Darlehen + Eigenkapital. Der Buchwert des Grundstücks bleibt konstant;
-            das Gebäude wird jährlich um die AfA abgeschrieben.
           </p>
         </section>
       </main>

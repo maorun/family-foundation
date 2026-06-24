@@ -224,6 +224,10 @@
         <p class="hint">
           Leere oder ungültige Eingaben werden rot markiert.
         </p>
+        <p class="hint" id="validationMessage" hidden>
+          Bitte korrigieren Sie die rot markierten Eingaben. Bis dahin bleiben
+          die zuletzt gültigen Ergebnisse sichtbar.
+        </p>
         <p class="hint">
           Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom
           ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige
@@ -288,8 +292,7 @@
       });
 
       function getNumber(id) {
-        const value = Number(document.getElementById(id).value);
-        return Number.isFinite(value) ? value : 0;
+        return Number(document.getElementById(id).value);
       }
 
       function formatCurrency(value) {
@@ -300,31 +303,46 @@
         return percent.format(value) + " %";
       }
 
-      function calculateProjection() {
-        const input = {
-          initialCapital: getNumber("initialCapital"),
-          giftTaxRate: getNumber("giftTaxRate") / 100,
-          annualAdminCost: getNumber("annualAdminCost"),
-          loanAmount: getNumber("loanAmount"),
-          loanInterestRate: getNumber("loanInterestRate") / 100,
-          loanRepaymentRate: getNumber("loanRepaymentRate") / 100,
-          buildingValue: getNumber("buildingValue"),
-          landValue: getNumber("landValue"),
-          monthlyRent: getNumber("monthlyRent"),
-          depreciationRate: getNumber("depreciationRate") / 100,
-          personalTaxRate: getNumber("personalTaxRate") / 100,
-          projectionYears: Math.max(1, Math.floor(getNumber("projectionYears"))),
-        };
+      function readInput() {
+        const hasInvalidFields = ids.some((id) => {
+          const field = document.getElementById(id);
+          return !field.validity.valid || field.value === "";
+        });
 
-        const propertyValue = input.buildingValue + input.landValue;
-        const annualRent = input.monthlyRent * 12;
-        const giftTax = input.initialCapital * input.giftTaxRate;
+        return {
+          hasInvalidFields,
+          input: {
+            initialCapital: getNumber("initialCapital"),
+            giftTaxRate: getNumber("giftTaxRate") / 100,
+            annualAdminCost: getNumber("annualAdminCost"),
+            loanAmount: getNumber("loanAmount"),
+            loanInterestRate: getNumber("loanInterestRate") / 100,
+            loanRepaymentRate: getNumber("loanRepaymentRate") / 100,
+            buildingValue: getNumber("buildingValue"),
+            landValue: getNumber("landValue"),
+            monthlyRent: getNumber("monthlyRent"),
+            depreciationRate: getNumber("depreciationRate") / 100,
+            personalTaxRate: getNumber("personalTaxRate") / 100,
+            projectionYears: Math.floor(getNumber("projectionYears")),
+          },
+        };
+      }
+
+      function calculateProjection(input) {
+        const normalizedInput = { ...input };
+
+        const propertyValue = normalizedInput.buildingValue + normalizedInput.landValue;
+        const annualRent = normalizedInput.monthlyRent * 12;
+        const giftTax = normalizedInput.initialCapital * normalizedInput.giftTaxRate;
         const initialCash =
-          input.initialCapital - giftTax + input.loanAmount - propertyValue;
+          normalizedInput.initialCapital -
+          giftTax +
+          normalizedInput.loanAmount -
+          propertyValue;
 
         let foundationCash = initialCash;
-        let remainingLoan = input.loanAmount;
-        let remainingDepreciableBuildingValue = input.buildingValue;
+        let remainingLoan = normalizedInput.loanAmount;
+        let remainingDepreciableBuildingValue = normalizedInput.buildingValue;
         let cumulativePersonNetCash = 0;
 
         const rows = [
@@ -339,28 +357,28 @@
           },
         ];
 
-        for (let year = 1; year <= input.projectionYears; year += 1) {
-          const annualInterest = remainingLoan * input.loanInterestRate;
-          // Das Modell nutzt eine konstante Tilgung auf Basis des ursprünglichen Darlehens.
+        for (let year = 1; year <= normalizedInput.projectionYears; year += 1) {
+          const annualInterest = remainingLoan * normalizedInput.loanInterestRate;
+          // The model uses constant repayment based on the original loan amount.
           const scheduledRepayment = Math.min(
             remainingLoan,
-            input.loanAmount * input.loanRepaymentRate
+            normalizedInput.loanAmount * normalizedInput.loanRepaymentRate
           );
           const annualDepreciation = Math.min(
             remainingDepreciableBuildingValue,
-            input.buildingValue * input.depreciationRate
+            normalizedInput.buildingValue * normalizedInput.depreciationRate
           );
           const taxableResult =
             annualRent -
-            input.annualAdminCost -
+            normalizedInput.annualAdminCost -
             annualInterest -
             annualDepreciation;
           const foundationCashFlow =
             annualRent -
-            input.annualAdminCost -
+            normalizedInput.annualAdminCost -
             annualInterest -
             scheduledRepayment;
-          const lenderTax = annualInterest * input.personalTaxRate;
+          const lenderTax = annualInterest * normalizedInput.personalTaxRate;
           const lenderNetCashFlow =
             scheduledRepayment + (annualInterest - lenderTax);
 
@@ -384,18 +402,19 @@
         }
 
         return {
-          input,
+          input: normalizedInput,
           annualRent,
           giftTax,
           propertyValue,
           initialCash,
-          annualDepreciationBase: input.buildingValue * input.depreciationRate,
+          annualDepreciationBase:
+            normalizedInput.buildingValue * normalizedInput.depreciationRate,
           rows,
         };
       }
 
       function renderSummary(result) {
-        const firstYear = result.rows[1] || result.rows[0];
+        const firstYear = result.rows[1];
         const lastYear = result.rows[result.rows.length - 1];
         const cards = [
           {
@@ -480,7 +499,13 @@
       }
 
       function render() {
-        const result = calculateProjection();
+        const { hasInvalidFields, input } = readInput();
+        document.getElementById("validationMessage").hidden = !hasInvalidFields;
+        if (hasInvalidFields) {
+          return;
+        }
+
+        const result = calculateProjection(input);
         renderSummary(result);
         renderTable(result);
       }

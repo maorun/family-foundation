@@ -1,6 +1,6 @@
 # family-foundation
 
-Ein einfacher Rechner für eine Familienstiftung mit:
+Ein offline-fähiger Next.js-PWA-Rechner für eine Familienstiftung mit:
 
 - Startkapital der Stiftung
 - optionaler Schenkungssteuer
@@ -13,8 +13,24 @@ Ein einfacher Rechner für eine Familienstiftung mit:
 
 ## Nutzung
 
-Die Anwendung ist als statische Datei umgesetzt.
+1. Abhängigkeiten installieren:
 
-1. Datei `index.html` im Repository-Root im Browser öffnen
-2. Werte anpassen
-3. Die Kennzahlen und die Jahresübersicht direkt im Browser prüfen
+   ```bash
+   npm install
+   ```
+
+2. Entwicklungsserver starten:
+
+   ```bash
+   npm run dev
+   ```
+
+3. `http://localhost:3000` im Browser öffnen
+4. Optional als PWA installieren; nach dem ersten Laden bleibt die Anwendung auch offline nutzbar
+
+## Qualitätssicherung
+
+```bash
+npm run lint
+npm run build
+```

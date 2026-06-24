@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Familienstiftung-Rechner Logo</title>
+  <desc id="desc">Blaues Signet mit stilisiertem Haus und Säulen</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0f4c81" />
+      <stop offset="100%" stop-color="#1d7acb" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)" />
+  <path d="M52 116 128 58l76 58v12H52z" fill="#dbeafe" />
+  <path d="M70 126h116v72H70z" fill="#ffffff" />
+  <path d="M92 126h16v72H92zm28 0h16v72h-16zm28 0h16v72h-16z" fill="#bfdbfe" />
+  <path d="M62 198h132v16H62z" fill="#dbeafe" />
+</svg>

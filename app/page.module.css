@@ -148,6 +148,131 @@
   background: #e2e8f0;
 }
 
+.negative {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.positive {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.tableSubtitle {
+  margin: 20px 0 8px;
+  font-size: 1.1rem;
+}
+
+.tableGroupHeader {
+  text-align: center;
+  border-left: 2px solid #cbd5e1;
+}
+
+.yearList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.yearCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.yearCardTitle {
+  margin: 0;
+  padding: 10px 16px;
+  background: #e2e8f0;
+  font-size: 1rem;
+}
+
+.yearSection {
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.yearSectionTitle {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.dataGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dataItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dataItem dt {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.dataItem dd {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.dataItemResult dt {
+  color: #0f172a;
+}
+
+.guvColumns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.guvColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guvColumnTitle {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  accent-color: #0f4c81;
+}
+
+.checkboxLabel {
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @media (max-width: 900px) {
   .page {
     padding: 16px;

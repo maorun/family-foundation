@@ -94,15 +94,6 @@ const FIELD_DEFINITIONS = [
   },
 ];
 
-const ROW_LABELS = {
-  year: "Jahr",
-  foundationCash: "Stiftung: Liquidität",
-  taxableResult: "Stiftung: Steuerliches Ergebnis",
-  foundationWealth: "Stiftung: Nettovermögen",
-  remainingLoan: "Restdarlehen",
-  personNetCashFlow: "Person: Netto-Zufluss",
-  personAssetPosition: "Person: Vermögensposition",
-};
 
 const currency = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -196,6 +187,8 @@ function calculateProjection(input) {
   let remainingDepreciableBuildingValue = input.buildingValue;
   let cumulativePersonNetCash = 0;
 
+  const buildingBookValue0 = input.buildingValue + input.landValue;
+
   const rows = [
     {
       year: 0,
@@ -205,6 +198,10 @@ function calculateProjection(input) {
       remainingLoan,
       personNetCashFlow: 0,
       personAssetPosition: remainingLoan,
+      // Bilanz Jahr 0
+      buildingBookValue: buildingBookValue0,
+      totalAssets: foundationCash + buildingBookValue0,
+      equity: foundationCash + buildingBookValue0 - remainingLoan,
     },
   ];
 
@@ -228,17 +225,25 @@ function calculateProjection(input) {
       input.annualAdminCost -
       annualInterest -
       scheduledRepayment;
+
+    // Jährlichen Überschuss als Sondertilgung verwenden
+    const extraRepayment = input.surplusToRepayment
+      ? Math.min(Math.max(0, foundationCashFlow), remainingLoan - scheduledRepayment)
+      : 0;
+
     const lenderTax = annualInterest * input.personalTaxRate;
     const lenderNetCashFlow =
-      scheduledRepayment + (annualInterest - lenderTax);
+      scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
-    foundationCash += foundationCashFlow;
-    remainingLoan -= scheduledRepayment;
+    foundationCash += foundationCashFlow - extraRepayment;
+    remainingLoan -= scheduledRepayment + extraRepayment;
     remainingDepreciableBuildingValue = Math.max(
       0,
       remainingDepreciableBuildingValue - annualDepreciation,
     );
     cumulativePersonNetCash += lenderNetCashFlow;
+
+    const buildingBookValue = remainingDepreciableBuildingValue + input.landValue;
 
     rows.push({
       year,
@@ -248,6 +253,20 @@ function calculateProjection(input) {
       remainingLoan,
       personNetCashFlow: lenderNetCashFlow,
       personAssetPosition: remainingLoan + cumulativePersonNetCash,
+      // GuV Stiftung
+      guvRent: annualRent,
+      guvAdminCost: input.annualAdminCost,
+      guvInterest: annualInterest,
+      guvDepreciation: annualDepreciation,
+      guvResult: taxableResult,
+      // GuV Person
+      personGuvInterest: annualInterest,
+      personGuvTax: lenderTax,
+      personGuvResult: annualInterest - lenderTax,
+      // Bilanz
+      buildingBookValue,
+      totalAssets: foundationCash + buildingBookValue,
+      equity: foundationCash + buildingBookValue - remainingLoan,
     });
   }
 
@@ -262,7 +281,10 @@ function calculateProjection(input) {
   };
 }
 
-const DEFAULT_RESULT = calculateProjection(validateFormValues(DEFAULT_FORM_VALUES).input);
+const DEFAULT_RESULT = calculateProjection({
+  ...validateFormValues(DEFAULT_FORM_VALUES).input,
+  surplusToRepayment: false,
+});
 
 function ServiceWorkerRegistration() {
   useEffect(() => {
@@ -282,8 +304,9 @@ function ServiceWorkerRegistration() {
 }
 
 export default function Home() {
-  const [{ formValues, result }, setState] = useState({
+  const [{ formValues, surplusToRepayment, result }, setState] = useState({
     formValues: DEFAULT_FORM_VALUES,
+    surplusToRepayment: false,
     result: DEFAULT_RESULT,
   });
 
@@ -345,9 +368,26 @@ export default function Home() {
       const nextValidation = validateFormValues(nextFormValues);
 
       return {
+        ...currentState,
         formValues: nextFormValues,
         result: nextValidation.input
-          ? calculateProjection(nextValidation.input)
+          ? calculateProjection({
+              ...nextValidation.input,
+              surplusToRepayment: currentState.surplusToRepayment,
+            })
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleSurplusToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(currentState.formValues);
+      return {
+        ...currentState,
+        surplusToRepayment: checked,
+        result: nextValidation.input
+          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: checked })
           : currentState.result,
       };
     });
@@ -416,6 +456,18 @@ export default function Home() {
               die zuletzt gültigen Ergebnisse sichtbar.
             </p>
           ) : null}
+          <div className={styles.checkboxRow}>
+            <input
+              id="surplusToRepayment"
+              type="checkbox"
+              checked={surplusToRepayment}
+              onChange={(event) => handleSurplusToggle(event.target.checked)}
+              className={styles.checkbox}
+            />
+            <label htmlFor="surplusToRepayment" className={styles.checkboxLabel}>
+              Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
+            </label>
+          </div>
           <p className={styles.hint}>
             Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom
             ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige
@@ -437,45 +489,124 @@ export default function Home() {
 
         <section className={styles.panel}>
           <h2>Jahresübersicht</h2>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead className={styles.tableHead}>
-                <tr>
-                  <th>{ROW_LABELS.year}</th>
-                  <th>{ROW_LABELS.foundationCash}</th>
-                  <th>{ROW_LABELS.taxableResult}</th>
-                  <th>{ROW_LABELS.foundationWealth}</th>
-                  <th>{ROW_LABELS.remainingLoan}</th>
-                  <th>{ROW_LABELS.personNetCashFlow}</th>
-                  <th>{ROW_LABELS.personAssetPosition}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.map((row) => (
-                  <tr key={row.year}>
-                    <td data-label={ROW_LABELS.year}>{row.year}</td>
-                    <td data-label={ROW_LABELS.foundationCash}>
-                      {formatCurrency(row.foundationCash)}
-                    </td>
-                    <td data-label={ROW_LABELS.taxableResult}>
-                      {formatCurrency(row.taxableResult)}
-                    </td>
-                    <td data-label={ROW_LABELS.foundationWealth}>
-                      {formatCurrency(row.foundationWealth)}
-                    </td>
-                    <td data-label={ROW_LABELS.remainingLoan}>
-                      {formatCurrency(row.remainingLoan)}
-                    </td>
-                    <td data-label={ROW_LABELS.personNetCashFlow}>
-                      {formatCurrency(row.personNetCashFlow)}
-                    </td>
-                    <td data-label={ROW_LABELS.personAssetPosition}>
-                      {formatCurrency(row.personAssetPosition)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className={styles.yearList}>
+            {result.rows.map((row) => (
+              <div key={row.year} className={styles.yearCard}>
+                <h3 className={styles.yearCardTitle}>Jahr {row.year}</h3>
+
+                <div className={styles.yearSection}>
+                  <h4 className={styles.yearSectionTitle}>Übersicht</h4>
+                  <dl className={styles.dataGrid}>
+                    <div className={styles.dataItem}>
+                      <dt>Stiftung: Liquidität</dt>
+                      <dd>{formatCurrency(row.foundationCash)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Stiftung: Steuerliches Ergebnis</dt>
+                      <dd>{formatCurrency(row.taxableResult)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Stiftung: Nettovermögen</dt>
+                      <dd>{formatCurrency(row.foundationWealth)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Restdarlehen</dt>
+                      <dd>{formatCurrency(row.remainingLoan)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Person: Netto-Zufluss</dt>
+                      <dd>{formatCurrency(row.personNetCashFlow)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Person: Vermögensposition</dt>
+                      <dd>{formatCurrency(row.personAssetPosition)}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {row.year > 0 && (
+                  <div className={styles.yearSection}>
+                    <h4 className={styles.yearSectionTitle}>GuV-Rechnung</h4>
+                    <div className={styles.guvColumns}>
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Stiftung</h5>
+                        <dl className={styles.dataGrid}>
+                          <div className={styles.dataItem}>
+                            <dt>Mieteinnahmen</dt>
+                            <dd>{formatCurrency(row.guvRent)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>Verwaltungskosten</dt>
+                            <dd>{formatCurrency(row.guvAdminCost)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>Darlehenszinsen</dt>
+                            <dd>{formatCurrency(row.guvInterest)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>AfA</dt>
+                            <dd>{formatCurrency(row.guvDepreciation)}</dd>
+                          </div>
+                          <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
+                            <dt>Jahresüberschuss/-fehlbetrag</dt>
+                            <dd className={row.guvResult < 0 ? styles.negative : styles.positive}>
+                              {formatCurrency(row.guvResult)}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Darlehens-Person</h5>
+                        <dl className={styles.dataGrid}>
+                          <div className={styles.dataItem}>
+                            <dt>Zinserträge</dt>
+                            <dd>{formatCurrency(row.personGuvInterest)}</dd>
+                          </div>
+                          <div className={styles.dataItem}>
+                            <dt>Einkommensteuer auf Zinsen</dt>
+                            <dd>{formatCurrency(row.personGuvTax)}</dd>
+                          </div>
+                          <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
+                            <dt>Netto-Zinsergebnis</dt>
+                            <dd className={row.personGuvResult < 0 ? styles.negative : styles.positive}>
+                              {formatCurrency(row.personGuvResult)}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className={styles.yearSection}>
+                  <h4 className={styles.yearSectionTitle}>Bilanz</h4>
+                  <dl className={styles.dataGrid}>
+                    <div className={styles.dataItem}>
+                      <dt>Immobilie (Buchwert)</dt>
+                      <dd>{formatCurrency(row.buildingBookValue)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Liquidität</dt>
+                      <dd>{formatCurrency(row.foundationCash)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Bilanzsumme</dt>
+                      <dd>{formatCurrency(row.totalAssets)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Darlehen</dt>
+                      <dd>{formatCurrency(row.remainingLoan)}</dd>
+                    </div>
+                    <div className={styles.dataItem}>
+                      <dt>Eigenkapital</dt>
+                      <dd className={row.equity < 0 ? styles.negative : styles.positive}>
+                        {formatCurrency(row.equity)}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            ))}
           </div>
           <p className={styles.note}>
             Das Nettovermögen der Stiftung nutzt den Immobilienwert aus Gebäude +

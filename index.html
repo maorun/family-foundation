@@ -316,7 +316,7 @@
 
         let foundationCash = initialCash;
         let remainingLoan = input.loanAmount;
-        let buildingBookValue = input.buildingValue;
+        let remainingDepreciableBuildingValue = input.buildingValue;
         let cumulativePersonNetCash = 0;
 
         const rows = [
@@ -333,12 +333,13 @@
 
         for (let year = 1; year <= input.projectionYears; year += 1) {
           const annualInterest = remainingLoan * input.loanInterestRate;
+          // Das Modell nutzt eine konstante Tilgung auf Basis des Ursprungsdarlehens.
           const scheduledRepayment = Math.min(
             remainingLoan,
             input.loanAmount * input.loanRepaymentRate
           );
           const annualDepreciation = Math.min(
-            buildingBookValue,
+            remainingDepreciableBuildingValue,
             input.buildingValue * input.depreciationRate
           );
           const taxableResult =
@@ -357,7 +358,10 @@
 
           foundationCash += foundationCashFlow;
           remainingLoan -= scheduledRepayment;
-          buildingBookValue = Math.max(0, buildingBookValue - annualDepreciation);
+          remainingDepreciableBuildingValue = Math.max(
+            0,
+            remainingDepreciableBuildingValue - annualDepreciation
+          );
           cumulativePersonNetCash += lenderNetCashFlow;
 
           rows.push({

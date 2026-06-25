@@ -549,7 +549,7 @@ export default function Home() {
                           <dd className={row.foundationCashFlow < 0 ? styles.negative : styles.positive}>
                             {formatCurrency(row.foundationCashFlow)}
                           </dd>
-                          <small className={styles.formula}>{formatCurrency(row.guvRent)} − {formatCurrency(row.guvAdminCost)} − {formatCurrency(row.guvInterest)}</small>
+                          <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen)</small>
                         </>
                       ) : (
                         <>
@@ -561,19 +561,19 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Steuerliches Ergebnis</dt>
                       <dd>{formatCurrency(row.taxableResult)}</dd>
-                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.guvRent)} − {formatCurrency(row.guvAdminCost)} − {formatCurrency(row.guvInterest)} − {formatCurrency(row.guvDepreciation)}</small>}
+                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Nettovermögen</dt>
                       <dd>{formatCurrency(row.foundationWealth)}</dd>
-                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} + {formatCurrency(result.propertyValue)} − {formatCurrency(row.remainingLoan)}</small>
+                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen)</small>
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Restdarlehen</dt>
                       <dd>{formatCurrency(row.remainingLoan)}</dd>
                       {row.year > 0 && (
                         <small className={styles.formula}>
-                          {formatCurrency(row.loanAtStartOfYear)} − {formatCurrency(row.scheduledRepayment)}{row.extraRepayment > 0 ? ` − ${formatCurrency(row.extraRepayment)}` : ""}
+                          {formatCurrency(row.loanAtStartOfYear)} (Anfangsschuld) − {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` − ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""}
                         </small>
                       )}
                     </div>
@@ -582,14 +582,14 @@ export default function Home() {
                       <dd>{formatCurrency(row.personNetCashFlow)}</dd>
                       {row.year > 0 && (
                         <small className={styles.formula}>
-                          {formatCurrency(row.scheduledRepayment)}{row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)}` : ""} + {formatCurrency(row.personGuvResult)}
+                          {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""} + {formatCurrency(row.personGuvResult)} (Netto-Zinsergebnis)
                         </small>
                       )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Person: Vermögensposition</dt>
                       <dd>{formatCurrency(row.personAssetPosition)}</dd>
-                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} + {formatCurrency(row.cumulativePersonNetCash)}</small>}
+                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} (Restdarlehen) + {formatCurrency(row.cumulativePersonNetCash)} (kum. Netto-Zuflüsse)</small>}
                     </div>
                   </dl>
                 </div>
@@ -604,7 +604,7 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Mieteinnahmen</dt>
                             <dd>{formatCurrency(row.guvRent)}</dd>
-                            <small className={styles.formula}>12 × {formatCurrency(result.input.monthlyRent)}</small>
+                            <small className={styles.formula}>12 Monate × {formatCurrency(result.input.monthlyRent)} (Monatsmiete)</small>
                           </div>
                           <div className={styles.dataItem}>
                             <dt>Verwaltungskosten</dt>
@@ -613,19 +613,19 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Darlehenszinsen</dt>
                             <dd>{formatCurrency(row.guvInterest)}</dd>
-                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} × {formatPercent(result.input.loanInterestRate * 100)}</small>
+                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} (Restschuld) × {formatPercent(result.input.loanInterestRate * 100)} (Zinssatz)</small>
                           </div>
                           <div className={styles.dataItem}>
                             <dt>AfA</dt>
                             <dd>{formatCurrency(row.guvDepreciation)}</dd>
-                            <small className={styles.formula}>{formatCurrency(result.input.buildingValue)} × {formatPercent(result.input.depreciationRate * 100)}</small>
+                            <small className={styles.formula}>{formatCurrency(result.input.buildingValue)} (Gebäudewert) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Jahresüberschuss/-fehlbetrag</dt>
                             <dd className={row.guvResult < 0 ? styles.negative : styles.positive}>
                               {formatCurrency(row.guvResult)}
                             </dd>
-                            <small className={styles.formula}>{formatCurrency(row.guvRent)} − {formatCurrency(row.guvAdminCost)} − {formatCurrency(row.guvInterest)} − {formatCurrency(row.guvDepreciation)}</small>
+                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>
                           </div>
                         </dl>
                       </div>
@@ -635,19 +635,19 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Zinserträge</dt>
                             <dd>{formatCurrency(row.personGuvInterest)}</dd>
-                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} × {formatPercent(result.input.loanInterestRate * 100)}</small>
+                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} (Restschuld) × {formatPercent(result.input.loanInterestRate * 100)} (Zinssatz)</small>
                           </div>
                           <div className={styles.dataItem}>
                             <dt>Einkommensteuer auf Zinsen</dt>
                             <dd>{formatCurrency(row.personGuvTax)}</dd>
-                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} × {formatPercent(result.input.personalTaxRate * 100)}</small>
+                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} (Zinserträge) × {formatPercent(result.input.personalTaxRate * 100)} (Steuersatz)</small>
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Netto-Zinsergebnis</dt>
                             <dd className={row.personGuvResult < 0 ? styles.negative : styles.positive}>
                               {formatCurrency(row.personGuvResult)}
                             </dd>
-                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} − {formatCurrency(row.personGuvTax)}</small>
+                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} (Zinserträge) − {formatCurrency(row.personGuvTax)} (Einkommensteuer)</small>
                           </div>
                         </dl>
                       </div>
@@ -661,7 +661,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Immobilie (Buchwert)</dt>
                       <dd>{formatCurrency(row.buildingBookValue)}</dd>
-                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.buildingDepreciableValue)} + {formatCurrency(result.input.landValue)}</small>}
+                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.buildingDepreciableValue)} (Gebäude Restwert) + {formatCurrency(result.input.landValue)} (Grundstück)</small>}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Kassenbestand</dt>
@@ -670,7 +670,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Bilanzsumme</dt>
                       <dd>{formatCurrency(row.totalAssets)}</dd>
-                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} + {formatCurrency(row.buildingBookValue)}</small>
+                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(row.buildingBookValue)} (Immobilie)</small>
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Darlehen</dt>
@@ -681,7 +681,7 @@ export default function Home() {
                       <dd className={row.equity < 0 ? styles.negative : styles.positive}>
                         {formatCurrency(row.equity)}
                       </dd>
-                      <small className={styles.formula}>{formatCurrency(row.totalAssets)} − {formatCurrency(row.remainingLoan)}</small>
+                      <small className={styles.formula}>{formatCurrency(row.totalAssets)} (Bilanzsumme) − {formatCurrency(row.remainingLoan)} (Darlehen)</small>
                     </div>
                   </dl>
                 </div>

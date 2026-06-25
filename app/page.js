@@ -207,7 +207,7 @@ function calculateProjection(input) {
 
   for (let year = 1; year <= input.projectionYears; year += 1) {
     const annualInterest = remainingLoan * input.loanInterestRate;
-    const scheduledRepayment = Math.min(
+    const scheduledRepaymentTarget = Math.min(
       remainingLoan,
       input.loanAmount * input.loanRepaymentRate,
     );
@@ -226,10 +226,18 @@ function calculateProjection(input) {
       annualRent -
       input.annualAdminCost -
       annualInterest;
+    const availableCashBeforeRepayment = Math.max(0, foundationCash + foundationCashFlow);
+    const scheduledRepayment = Math.min(
+      scheduledRepaymentTarget,
+      availableCashBeforeRepayment,
+    );
 
     // Jährlichen Überschuss als Sondertilgung verwenden
     const extraRepayment = input.surplusToRepayment
-      ? Math.min(Math.max(0, foundationCashFlow - scheduledRepayment), remainingLoan - scheduledRepayment)
+      ? Math.min(
+          Math.max(0, availableCashBeforeRepayment - scheduledRepayment),
+          remainingLoan - scheduledRepayment,
+        )
       : 0;
 
     const loanAtStartOfYear = remainingLoan;
@@ -237,7 +245,7 @@ function calculateProjection(input) {
     const lenderNetCashFlow =
       scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
-    foundationCash += foundationCashFlow - scheduledRepayment - extraRepayment;
+    foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
     remainingLoan -= scheduledRepayment + extraRepayment;
     remainingDepreciableBuildingValue = Math.max(
       0,

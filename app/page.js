@@ -245,7 +245,8 @@ function calculateProjection(input) {
     );
     cumulativePersonNetCash += lenderNetCashFlow;
 
-    const buildingBookValue = remainingDepreciableBuildingValue + input.landValue;
+    const buildingDepreciableValue = remainingDepreciableBuildingValue;
+    const buildingBookValue = buildingDepreciableValue + input.landValue;
 
     rows.push({
       year,
@@ -256,6 +257,7 @@ function calculateProjection(input) {
       remainingLoan,
       personNetCashFlow: lenderNetCashFlow,
       personAssetPosition: remainingLoan + cumulativePersonNetCash,
+      cumulativePersonNetCash,
       // GuV Stiftung
       guvRent: annualRent,
       guvAdminCost: input.annualAdminCost,
@@ -263,11 +265,14 @@ function calculateProjection(input) {
       guvDepreciation: annualDepreciation,
       guvResult: taxableResult,
       loanAtStartOfYear,
+      scheduledRepayment,
+      extraRepayment,
       // GuV Person
       personGuvInterest: annualInterest,
       personGuvTax: lenderTax,
       personGuvResult: annualInterest - lenderTax,
       // Bilanz
+      buildingDepreciableValue,
       buildingBookValue,
       totalAssets: foundationCash + buildingBookValue,
       equity: foundationCash + buildingBookValue - remainingLoan,
@@ -544,6 +549,7 @@ export default function Home() {
                           <dd className={row.foundationCashFlow < 0 ? styles.negative : styles.positive}>
                             {formatCurrency(row.foundationCashFlow)}
                           </dd>
+                          <small className={styles.formula}>{formatCurrency(row.guvRent)} − {formatCurrency(row.guvAdminCost)} − {formatCurrency(row.guvInterest)}</small>
                         </>
                       ) : (
                         <>
@@ -555,22 +561,35 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Steuerliches Ergebnis</dt>
                       <dd>{formatCurrency(row.taxableResult)}</dd>
+                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.guvRent)} − {formatCurrency(row.guvAdminCost)} − {formatCurrency(row.guvInterest)} − {formatCurrency(row.guvDepreciation)}</small>}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Nettovermögen</dt>
                       <dd>{formatCurrency(row.foundationWealth)}</dd>
+                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} + {formatCurrency(result.propertyValue)} − {formatCurrency(row.remainingLoan)}</small>
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Restdarlehen</dt>
                       <dd>{formatCurrency(row.remainingLoan)}</dd>
+                      {row.year > 0 && (
+                        <small className={styles.formula}>
+                          {formatCurrency(row.loanAtStartOfYear)} − {formatCurrency(row.scheduledRepayment)}{row.extraRepayment > 0 ? ` − ${formatCurrency(row.extraRepayment)}` : ""}
+                        </small>
+                      )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Person: Netto-Zufluss</dt>
                       <dd>{formatCurrency(row.personNetCashFlow)}</dd>
+                      {row.year > 0 && (
+                        <small className={styles.formula}>
+                          {formatCurrency(row.scheduledRepayment)}{row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)}` : ""} + {formatCurrency(row.personGuvResult)}
+                        </small>
+                      )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Person: Vermögensposition</dt>
                       <dd>{formatCurrency(row.personAssetPosition)}</dd>
+                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} + {formatCurrency(row.cumulativePersonNetCash)}</small>}
                     </div>
                   </dl>
                 </div>
@@ -642,6 +661,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Immobilie (Buchwert)</dt>
                       <dd>{formatCurrency(row.buildingBookValue)}</dd>
+                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.buildingDepreciableValue)} + {formatCurrency(result.input.landValue)}</small>}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Kassenbestand</dt>
@@ -650,6 +670,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Bilanzsumme</dt>
                       <dd>{formatCurrency(row.totalAssets)}</dd>
+                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} + {formatCurrency(row.buildingBookValue)}</small>
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Darlehen</dt>
@@ -660,6 +681,7 @@ export default function Home() {
                       <dd className={row.equity < 0 ? styles.negative : styles.positive}>
                         {formatCurrency(row.equity)}
                       </dd>
+                      <small className={styles.formula}>{formatCurrency(row.totalAssets)} − {formatCurrency(row.remainingLoan)}</small>
                     </div>
                   </dl>
                 </div>

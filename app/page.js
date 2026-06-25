@@ -245,10 +245,7 @@ function calculateProjection(input) {
     const lenderNetCashFlow =
       scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
-    foundationCash = Math.max(
-      0,
-      foundationCash + foundationCashFlow - scheduledRepayment - extraRepayment,
-    );
+    foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
     remainingLoan -= scheduledRepayment + extraRepayment;
     remainingDepreciableBuildingValue = Math.max(
       0,

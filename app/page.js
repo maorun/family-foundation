@@ -232,6 +232,7 @@ function calculateProjection(input) {
       ? Math.min(Math.max(0, foundationCashFlow - scheduledRepayment), remainingLoan - scheduledRepayment)
       : 0;
 
+    const loanAtStartOfYear = remainingLoan;
     const lenderTax = annualInterest * input.personalTaxRate;
     const lenderNetCashFlow =
       scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
@@ -261,6 +262,7 @@ function calculateProjection(input) {
       guvInterest: annualInterest,
       guvDepreciation: annualDepreciation,
       guvResult: taxableResult,
+      loanAtStartOfYear,
       // GuV Person
       personGuvInterest: annualInterest,
       personGuvTax: lenderTax,
@@ -583,6 +585,7 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Mieteinnahmen</dt>
                             <dd>{formatCurrency(row.guvRent)}</dd>
+                            <small className={styles.formula}>12 × {formatCurrency(result.input.monthlyRent)}</small>
                           </div>
                           <div className={styles.dataItem}>
                             <dt>Verwaltungskosten</dt>
@@ -591,16 +594,19 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Darlehenszinsen</dt>
                             <dd>{formatCurrency(row.guvInterest)}</dd>
+                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} × {formatPercent(result.input.loanInterestRate * 100)}</small>
                           </div>
                           <div className={styles.dataItem}>
                             <dt>AfA</dt>
                             <dd>{formatCurrency(row.guvDepreciation)}</dd>
+                            <small className={styles.formula}>{formatCurrency(result.input.buildingValue)} × {formatPercent(result.input.depreciationRate * 100)}</small>
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Jahresüberschuss/-fehlbetrag</dt>
                             <dd className={row.guvResult < 0 ? styles.negative : styles.positive}>
                               {formatCurrency(row.guvResult)}
                             </dd>
+                            <small className={styles.formula}>{formatCurrency(row.guvRent)} − {formatCurrency(row.guvAdminCost)} − {formatCurrency(row.guvInterest)} − {formatCurrency(row.guvDepreciation)}</small>
                           </div>
                         </dl>
                       </div>
@@ -610,16 +616,19 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Zinserträge</dt>
                             <dd>{formatCurrency(row.personGuvInterest)}</dd>
+                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} × {formatPercent(result.input.loanInterestRate * 100)}</small>
                           </div>
                           <div className={styles.dataItem}>
                             <dt>Einkommensteuer auf Zinsen</dt>
                             <dd>{formatCurrency(row.personGuvTax)}</dd>
+                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} × {formatPercent(result.input.personalTaxRate * 100)}</small>
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Netto-Zinsergebnis</dt>
                             <dd className={row.personGuvResult < 0 ? styles.negative : styles.positive}>
                               {formatCurrency(row.personGuvResult)}
                             </dd>
+                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} − {formatCurrency(row.personGuvTax)}</small>
                           </div>
                         </dl>
                       </div>

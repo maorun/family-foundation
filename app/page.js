@@ -235,7 +235,7 @@ function calculateProjection(input) {
     // Jährlichen Überschuss als Sondertilgung verwenden
     const extraRepayment = input.surplusToRepayment
       ? Math.min(
-          Math.max(0, foundationCashFlow - scheduledRepayment),
+          Math.max(0, availableCashBeforeRepayment - scheduledRepayment),
           remainingLoan - scheduledRepayment,
         )
       : 0;

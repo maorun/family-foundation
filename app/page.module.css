@@ -234,6 +234,12 @@
   color: #0f172a;
 }
 
+.formula {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
 .guvColumns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

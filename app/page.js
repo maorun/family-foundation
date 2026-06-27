@@ -62,6 +62,14 @@ const FIELD_DEFINITIONS = [
     defaultValue: 200000,
   },
   {
+    id: "realEstateTaxRate",
+    label: "Grunderwerbsteuer (%)",
+    min: 0,
+    max: 10,
+    step: "0.5",
+    defaultValue: 5.0,
+  },
+  {
     id: "monthlyRent",
     label: "Monatliche Miete (€)",
     min: 0,
@@ -94,6 +102,25 @@ const FIELD_DEFINITIONS = [
   },
 ];
 
+
+const BUNDESLAENDER = [
+  { name: "Baden-Württemberg", rate: 5.0 },
+  { name: "Bayern", rate: 3.5 },
+  { name: "Berlin", rate: 6.0 },
+  { name: "Brandenburg", rate: 6.5 },
+  { name: "Bremen", rate: 5.0 },
+  { name: "Hamburg", rate: 5.5 },
+  { name: "Hessen", rate: 6.0 },
+  { name: "Mecklenburg-Vorpommern", rate: 6.0 },
+  { name: "Niedersachsen", rate: 5.0 },
+  { name: "Nordrhein-Westfalen", rate: 6.5 },
+  { name: "Rheinland-Pfalz", rate: 5.0 },
+  { name: "Saarland", rate: 6.5 },
+  { name: "Sachsen", rate: 5.5 },
+  { name: "Sachsen-Anhalt", rate: 5.0 },
+  { name: "Schleswig-Holstein", rate: 6.5 },
+  { name: "Thüringen", rate: 6.5 },
+];
 
 const currency = new Intl.NumberFormat("de-DE", {
   style: "currency",
@@ -186,6 +213,7 @@ function validateFormValues(formValues) {
       loanRepaymentRate: parsedValues.loanRepaymentRate / 100,
       buildingValue: parsedValues.buildingValue,
       landValue: parsedValues.landValue,
+      realEstateTaxRate: parsedValues.realEstateTaxRate / 100,
       monthlyRent: parsedValues.monthlyRent,
       depreciationRate: parsedValues.depreciationRate / 100,
       personalTaxRate: parsedValues.personalTaxRate / 100,
@@ -198,15 +226,27 @@ function calculateProjection(input) {
   const propertyValue = input.buildingValue + input.landValue;
   const annualRent = input.monthlyRent * 12;
   const giftTax = input.initialCapital * input.giftTaxRate;
+  const realEstateTax = propertyValue * input.realEstateTaxRate;
+
+  // Grunderwerbsteuer aufgeteilt auf Gebäude und Grundstück (proportional zum Kaufpreis)
+  const buildingRatio = propertyValue > 0 ? input.buildingValue / propertyValue : 0;
+  const realEstateTaxBuildingPortion = realEstateTax * buildingRatio;
+  const realEstateTaxLandPortion = realEstateTax - realEstateTaxBuildingPortion;
+
+  // Die anteilige GrESt am Gebäude erhöht die abschreibungsfähige Anschaffungskostenbasis
+  const depreciableBuildingBase = input.buildingValue + realEstateTaxBuildingPortion;
+  // Buchwert des Grundstücks inkl. GrESt-Anteil (nicht abschreibungsfähig)
+  const landBookBase = input.landValue + realEstateTaxLandPortion;
+
   const initialCash =
-    input.initialCapital - giftTax + input.loanAmount - propertyValue;
+    input.initialCapital - giftTax + input.loanAmount - propertyValue - realEstateTax;
 
   let foundationCash = initialCash;
   let remainingLoan = input.loanAmount;
-  let remainingDepreciableBuildingValue = input.buildingValue;
+  let remainingDepreciableBuildingValue = depreciableBuildingBase;
   let cumulativePersonNetCash = 0;
 
-  const buildingBookValue0 = input.buildingValue + input.landValue;
+  const buildingBookValue0 = depreciableBuildingBase + landBookBase;
 
   const rows = [
     {
@@ -232,7 +272,7 @@ function calculateProjection(input) {
     );
     const annualDepreciation = Math.min(
       remainingDepreciableBuildingValue,
-      input.buildingValue * input.depreciationRate,
+      depreciableBuildingBase * input.depreciationRate,
     );
     const taxableResult =
       annualRent -
@@ -245,11 +285,9 @@ function calculateProjection(input) {
       annualRent -
       input.annualAdminCost -
       annualInterest;
-    const availableCashBeforeRepayment = Math.max(0, foundationCash + foundationCashFlow);
-    const scheduledRepayment = Math.min(
-      scheduledRepaymentTarget,
-      availableCashBeforeRepayment,
-    );
+    const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
+    // Business rule: normal repayment is always paid each year, even with negative cash.
+    const scheduledRepayment = scheduledRepaymentTarget;
 
     // Jährlichen Überschuss als Sondertilgung verwenden
     const extraRepayment = input.surplusToRepayment
@@ -264,6 +302,7 @@ function calculateProjection(input) {
     const lenderNetCashFlow =
       scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
+    const prevFoundationCash = foundationCash;
     foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
     remainingLoan -= scheduledRepayment + extraRepayment;
     remainingDepreciableBuildingValue = Math.max(
@@ -273,7 +312,7 @@ function calculateProjection(input) {
     cumulativePersonNetCash += lenderNetCashFlow;
 
     const buildingDepreciableValue = remainingDepreciableBuildingValue;
-    const buildingBookValue = buildingDepreciableValue + input.landValue;
+    const buildingBookValue = buildingDepreciableValue + landBookBase;
 
     rows.push({
       year,
@@ -294,6 +333,7 @@ function calculateProjection(input) {
       loanAtStartOfYear,
       scheduledRepayment,
       extraRepayment,
+      prevFoundationCash,
       // GuV Person
       personGuvInterest: annualInterest,
       personGuvTax: lenderTax,
@@ -310,9 +350,13 @@ function calculateProjection(input) {
     input,
     annualRent,
     giftTax,
+    realEstateTax,
+    realEstateTaxBuildingPortion,
+    realEstateTaxLandPortion,
+    depreciableBuildingBase,
     propertyValue,
     initialCash,
-    annualDepreciationBase: input.buildingValue * input.depreciationRate,
+    annualDepreciationBase: depreciableBuildingBase * input.depreciationRate,
     rows,
   };
 }
@@ -342,9 +386,10 @@ function ServiceWorkerRegistration() {
 }
 
 export default function Home() {
-  const [{ formValues, surplusToRepayment, result }, setState] = useState({
+  const [{ formValues, surplusToRepayment, bundesland, result }, setState] = useState({
     formValues: DEFAULT_FORM_VALUES,
     surplusToRepayment: false,
+    bundesland: null,
     result: DEFAULT_RESULT,
   });
 
@@ -356,11 +401,13 @@ export default function Home() {
       const parsed = JSON.parse(saved);
       const nextFormValues = { ...DEFAULT_FORM_VALUES, ...parsed.formValues };
       const nextSurplusToRepayment = parsed.surplusToRepayment ?? false;
+      const nextBundesland = parsed.bundesland ?? null;
       const nextValidation = validateFormValues(nextFormValues);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({
         formValues: nextFormValues,
         surplusToRepayment: nextSurplusToRepayment,
+        bundesland: nextBundesland,
         result: nextValidation.input
           ? calculateProjection({ ...nextValidation.input, surplusToRepayment: nextSurplusToRepayment })
           : DEFAULT_RESULT,
@@ -374,13 +421,13 @@ export default function Home() {
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ formValues, surplusToRepayment }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ formValues, surplusToRepayment, bundesland }));
       } catch {
         // ignore storage errors
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [formValues, surplusToRepayment]);
+  }, [formValues, surplusToRepayment, bundesland]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
   const hasInvalidFields = validation.invalidIds.length > 0;
@@ -395,6 +442,11 @@ export default function Home() {
       detail: formatPercent(result.input.giftTaxRate * 100),
     },
     {
+      title: "Grunderwerbsteuer",
+      value: formatCurrency(result.realEstateTax),
+      detail: `${formatPercent(result.input.realEstateTaxRate * 100)} auf ${formatCurrency(result.propertyValue)}`,
+    },
+    {
       title: "Kaufpreis Immobilie",
       value: formatCurrency(result.propertyValue),
       detail: `Gebäude ${formatCurrency(result.input.buildingValue)} + Grundstück ${formatCurrency(result.input.landValue)}`,
@@ -407,7 +459,7 @@ export default function Home() {
     {
       title: "AfA p.a.",
       value: formatCurrency(result.annualDepreciationBase),
-      detail: formatPercent(result.input.depreciationRate * 100),
+      detail: `${formatPercent(result.input.depreciationRate * 100)} auf ${formatCurrency(result.depreciableBuildingBase)}`,
     },
     {
       title: "Stiftung: Startliquidität nach Ankauf",
@@ -578,6 +630,24 @@ export default function Home() {
     });
   }
 
+  function handleBundeslandChange(name) {
+    const bl = BUNDESLAENDER.find((b) => b.name === name) ?? null;
+    setState((currentState) => {
+      const nextFormValues = bl
+        ? { ...currentState.formValues, realEstateTaxRate: String(bl.rate) }
+        : currentState.formValues;
+      const nextValidation = validateFormValues(nextFormValues);
+      return {
+        ...currentState,
+        bundesland: name || null,
+        formValues: nextFormValues,
+        result: nextValidation.input
+          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: currentState.surplusToRepayment })
+          : currentState.result,
+      };
+    });
+  }
+
   return (
     <>
       <ServiceWorkerRegistration />
@@ -609,6 +679,24 @@ export default function Home() {
 
         <section className={styles.panel}>
           <h2>Eingaben</h2>
+          <div className={styles.bundeslandRow}>
+            <label htmlFor="bundesland" className={styles.fieldLabel}>
+              Bundesland (setzt Grunderwerbsteuer-Satz)
+            </label>
+            <select
+              id="bundesland"
+              value={bundesland ?? ""}
+              onChange={(event) => handleBundeslandChange(event.target.value)}
+              className={styles.fieldInput}
+            >
+              <option value="">— Manuell eingeben —</option>
+              {BUNDESLAENDER.map((bl) => (
+                <option key={bl.name} value={bl.name}>
+                  {bl.name} ({bl.rate} %)
+                </option>
+              ))}
+            </select>
+          </div>
           <div className={styles.grid}>
             {FIELD_DEFINITIONS.map((field) => {
               const isInvalid = validation.invalidIds.includes(field.id);
@@ -769,6 +857,7 @@ export default function Home() {
                         <>
                           <dt>Stiftung: Startliquidität</dt>
                           <dd>{formatCurrency(row.foundationCash)}</dd>
+                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                         </>
                       )}
                     </div>
@@ -777,6 +866,13 @@ export default function Home() {
                       <dd>{formatCurrency(row.taxableResult)}</dd>
                       {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>}
                     </div>
+                    {row.year === 0 && (
+                      <div className={styles.dataItem}>
+                        <dt>Grunderwerbsteuer (Anschaffungskosten)</dt>
+                        <dd className={styles.negative}>{formatCurrency(result.realEstateTax)}</dd>
+                        <small className={styles.formula}>{formatPercent(result.input.realEstateTaxRate * 100)} × {formatCurrency(result.propertyValue)} (Kaufpreis) — Gebäudeanteil {formatCurrency(result.realEstateTaxBuildingPortion)} wird abgeschrieben</small>
+                      </div>
+                    )}
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Nettovermögen</dt>
                       <dd>{formatCurrency(row.foundationWealth)}</dd>
@@ -832,7 +928,7 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>AfA</dt>
                             <dd>{formatCurrency(row.guvDepreciation)}</dd>
-                            <small className={styles.formula}>{formatCurrency(result.input.buildingValue)} (Gebäudewert) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
+                            <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Jahresüberschuss/-fehlbetrag</dt>
@@ -875,11 +971,16 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Immobilie (Buchwert)</dt>
                       <dd>{formatCurrency(row.buildingBookValue)}</dd>
-                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.buildingDepreciableValue)} (Gebäude Restwert) + {formatCurrency(result.input.landValue)} (Grundstück)</small>}
+                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.buildingDepreciableValue)} (Gebäude Restwert) + {formatCurrency(result.realEstateTaxLandPortion + result.input.landValue)} (Grundstück inkl. GrESt-Anteil)</small>}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Kassenbestand</dt>
                       <dd>{formatCurrency(row.foundationCash)}</dd>
+                      {row.year === 0 ? (
+                        <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                      ) : (
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.foundationCashFlow)} (Überschuss) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""})</small>
+                      )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Bilanzsumme</dt>

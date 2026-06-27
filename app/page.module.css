@@ -63,6 +63,11 @@
   font-weight: 700;
 }
 
+.bundeslandRow {
+  margin-bottom: 16px;
+  max-width: 320px;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

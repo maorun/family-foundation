@@ -106,6 +106,12 @@ const percent = new Intl.NumberFormat("de-DE", {
   maximumFractionDigits: 1,
 });
 
+const CHART_COORDINATE_PRECISION = 2;
+const CHART_Y_TICK_COUNT = 5;
+const CHART_MAX_X_TICKS = 8;
+const CHART_X_AXIS_LABEL_OFFSET = 24;
+const CHART_MIN_VALUE_FLOOR = 0;
+
 const DEFAULT_FORM_VALUES = Object.fromEntries(
   FIELD_DEFINITIONS.map((field) => [field.id, String(field.defaultValue)]),
 );
@@ -116,6 +122,19 @@ function formatCurrency(value) {
 
 function formatPercent(value) {
   return `${percent.format(value)} %`;
+}
+
+function createSvgLinePath(points) {
+  if (points.length === 0) {
+    return "";
+  }
+
+  return points
+    .map(
+      (point, index) =>
+        `${index === 0 ? "M" : "L"} ${point.x.toFixed(CHART_COORDINATE_PRECISION)} ${point.y.toFixed(CHART_COORDINATE_PRECISION)}`,
+    )
+    .join(" ");
 }
 
 function parseNumber(value) {
@@ -412,6 +431,119 @@ export default function Home() {
     },
   ];
 
+  const wealthChart = useMemo(() => {
+    if (result.rows.length === 0) {
+      return {
+        chartWidth: 900,
+        chartHeight: 340,
+        margin: {
+          top: 20,
+          right: 20,
+          bottom: 48,
+          left: 72,
+        },
+        xAxisLabelOffset: CHART_X_AXIS_LABEL_OFFSET,
+        lines: [],
+        yTicks: [],
+        xTicks: [],
+      };
+    }
+
+    const chartWidth = 900;
+    const chartHeight = 340;
+    const margin = {
+      top: 20,
+      right: 20,
+      bottom: 48,
+      left: 72,
+    };
+    const xAxisLabelOffset = CHART_X_AXIS_LABEL_OFFSET;
+    const innerWidth = chartWidth - margin.left - margin.right;
+    const innerHeight = chartHeight - margin.top - margin.bottom;
+    const maxIndex = Math.max(1, result.rows.length - 1);
+
+    const series = [
+      {
+        id: "foundation",
+        label: "Stiftung",
+        color: "#2563eb",
+        values: result.rows.map((row) => ({
+          year: row.year,
+          value: row.foundationWealth,
+        })),
+      },
+      {
+        id: "person",
+        label: "Privatperson",
+        color: "#0f766e",
+        values: result.rows.map((row) => ({
+          year: row.year,
+          value: row.personAssetPosition,
+        })),
+      },
+      {
+        id: "total",
+        label: "Gesamtvermögen",
+        color: "#7c3aed",
+        values: result.rows.map((row) => ({
+          year: row.year,
+          value: row.foundationWealth + row.personAssetPosition,
+        })),
+      },
+    ];
+
+    const allValues = series.flatMap((line) => line.values.map((entry) => entry.value));
+    const minValue = Math.min(CHART_MIN_VALUE_FLOOR, ...allValues);
+    const maxValue = Math.max(...allValues);
+    const valueRange = maxValue - minValue || 1;
+
+    const yFromValue = (value) =>
+      margin.top + ((maxValue - value) / valueRange) * innerHeight;
+    const xFromIndex = (index) =>
+      margin.left + (index / maxIndex) * innerWidth;
+
+    const lines = series.map((line) => ({
+      ...line,
+      points: line.values.map((entry, index) => ({
+        x: xFromIndex(index),
+        y: yFromValue(entry.value),
+        year: entry.year,
+        value: entry.value,
+      })),
+    }));
+
+    const yTicks = Array.from({ length: CHART_Y_TICK_COUNT }, (_, index) => {
+      const ratio = CHART_Y_TICK_COUNT === 1 ? 0 : index / (CHART_Y_TICK_COUNT - 1);
+      const value = maxValue - valueRange * ratio;
+      return {
+        value,
+        y: yFromValue(value),
+      };
+    });
+
+    const xTickStep = Math.max(1, Math.ceil(result.rows.length / CHART_MAX_X_TICKS));
+    const xTicks = result.rows
+      .map((row, index) => ({
+        index,
+        year: row.year,
+        x: xFromIndex(index),
+      }))
+      .filter(
+        (tick, index, allTicks) =>
+          index === 0 || index === allTicks.length - 1 || tick.index % xTickStep === 0,
+      );
+
+    return {
+      chartWidth,
+      chartHeight,
+      margin,
+      xAxisLabelOffset,
+      lines,
+      yTicks,
+      xTicks,
+    };
+  }, [result.rows]);
+
   function handleFieldChange(fieldId, value) {
     setState((currentState) => {
       const nextFormValues = {
@@ -536,6 +668,80 @@ export default function Home() {
                 <div className={styles.value}>{card.value}</div>
                 <div>{card.detail}</div>
               </article>
+            ))}
+          </div>
+        </section>
+
+        <section className={styles.panel}>
+          <h2>Vermögensverlauf</h2>
+          <p className={styles.hint}>
+            Das Diagramm aktualisiert sich direkt bei jeder Parameteränderung.
+          </p>
+          <div className={styles.chartWrap}>
+            <svg
+              viewBox={`0 0 ${wealthChart.chartWidth} ${wealthChart.chartHeight}`}
+              className={styles.chart}
+              role="img"
+              aria-label="Zeitlicher Verlauf von Stiftungs-, Privat- und Gesamtvermögen"
+            >
+              {wealthChart.yTicks.map((tick) => (
+                <g key={`y-${tick.y}`}>
+                  <line
+                    x1={wealthChart.margin.left}
+                    y1={tick.y}
+                    x2={wealthChart.chartWidth - wealthChart.margin.right}
+                    y2={tick.y}
+                    className={styles.chartGridLine}
+                  />
+                  <text x={wealthChart.margin.left - 6} y={tick.y + 4} className={styles.chartAxisLabel}>
+                    {formatCurrency(tick.value)}
+                  </text>
+                </g>
+              ))}
+
+              {wealthChart.xTicks.map((tick) => (
+                <g key={`x-${tick.year}`}>
+                  <line
+                    x1={tick.x}
+                    y1={wealthChart.margin.top}
+                    x2={tick.x}
+                    y2={wealthChart.chartHeight - wealthChart.margin.bottom}
+                    className={styles.chartGridLineVertical}
+                  />
+                  <text
+                    x={tick.x}
+                    y={wealthChart.chartHeight - wealthChart.xAxisLabelOffset}
+                    className={styles.chartAxisLabelX}
+                  >
+                    {tick.year}
+                  </text>
+                </g>
+              ))}
+
+              {wealthChart.lines.map((line) => (
+                <g key={line.id}>
+                  <path
+                    d={createSvgLinePath(line.points)}
+                    fill="none"
+                    stroke={line.color}
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </g>
+              ))}
+            </svg>
+          </div>
+          <div className={styles.chartLegend}>
+            {wealthChart.lines.map((line) => (
+              <div key={`legend-${line.id}`} className={styles.chartLegendItem}>
+                <span
+                  className={styles.chartLegendSwatch}
+                  style={{ backgroundColor: line.color }}
+                  aria-hidden="true"
+                />
+                <span>{line.label}</span>
+              </div>
             ))}
           </div>
         </section>

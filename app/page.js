@@ -267,16 +267,8 @@ function calculateProjection(input) {
       input.annualAdminCost -
       annualInterest;
     const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
-    const scheduledRepaymentLimitedByCash = Math.min(
-      scheduledRepaymentTarget,
-      Math.max(0, availableCashBeforeRepayment),
-    );
-    const scheduledRepayment =
-      // Requirement: scheduled repayment is always fully paid in year 1,
-      // even if this temporarily makes the cash balance negative.
-      year === 1
-        ? scheduledRepaymentTarget
-        : scheduledRepaymentLimitedByCash;
+    // Business rule: normal repayment is always paid each year, even with negative cash.
+    const scheduledRepayment = scheduledRepaymentTarget;
 
     // Jährlichen Überschuss als Sondertilgung verwenden
     const extraRepayment = input.surplusToRepayment

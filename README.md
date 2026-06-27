@@ -3,7 +3,7 @@
 Ein offline-fähiger Next.js-PWA-Rechner für eine Familienstiftung mit:
 
 - Startkapital der Stiftung
-- Schenkungssteuer auf Basis der gewählten Verwandtschaftsgruppe
+- Schenkungssteuer auf Basis der gewählten Verwandtschaftsgruppe (inkl. pauschalem Freibetrag)
 - jährlichen Verwaltungskosten
 - privatem Darlehen mit Zins und Tilgung
 - Immobilie mit Gebäude- und Grundstücksanteil

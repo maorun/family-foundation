@@ -95,27 +95,30 @@ const FIELD_DEFINITIONS = [
   },
 ];
 
-// Modellannahme: Vereinfachte feste Schenkungssteuersätze je Steuerklasse,
-// orientiert an typischen Eingangssätzen nach §§ 15, 19 ErbStG
-// (ohne Freibeträge, Stufenlogik und Sonderfälle).
+// Modellannahme: Vereinfachte feste Schenkungssteuer je Steuerklasse
+// mit pauschalem Freibetrag pro Verwandtschaftsgruppe.
+// (ohne Stufenlogik und Sonderfälle).
 const RELATIONSHIP_OPTIONS = [
   {
     id: "class1",
-    label: "Ehe-/Lebenspartner, Kinder oder Enkel (Steuerklasse I)",
+    label: "Ehe-/Lebenspartner, Kinder oder Enkel (Steuerklasse I, pauschaler Freibetrag 400.000 €)",
     shortLabel: "Steuerklasse I",
     giftTaxRate: 0.15,
+    giftTaxAllowance: 400_000,
   },
   {
     id: "class2",
-    label: "Geschwister, Nichten/Neffen, Schwiegerkinder (Steuerklasse II)",
+    label: "Geschwister, Nichten/Neffen, Schwiegerkinder (Steuerklasse II, pauschaler Freibetrag 20.000 €)",
     shortLabel: "Steuerklasse II",
     giftTaxRate: 0.25,
+    giftTaxAllowance: 20_000,
   },
   {
     id: "class3",
-    label: "Nicht verwandt (Steuerklasse III)",
+    label: "Nicht verwandt (Steuerklasse III, pauschaler Freibetrag 20.000 €)",
     shortLabel: "Steuerklasse III",
     giftTaxRate: 0.3,
+    giftTaxAllowance: 20_000,
   },
 ];
 
@@ -251,10 +254,21 @@ function getRelationshipOption(relationshipId) {
   );
 }
 
+function createProjectionInput(validatedInput, relationship, surplusToRepayment) {
+  return {
+    ...validatedInput,
+    giftTaxRate: relationship.giftTaxRate,
+    giftTaxAllowance: relationship.giftTaxAllowance,
+    surplusToRepayment,
+  };
+}
+
 function calculateProjection(input) {
   const propertyValue = input.buildingValue + input.landValue;
   const annualRent = input.monthlyRent * 12;
-  const giftTax = input.initialCapital * input.giftTaxRate;
+  const giftTaxAllowance = Math.max(0, input.giftTaxAllowance ?? 0);
+  const taxableGiftBase = Math.max(0, input.initialCapital - giftTaxAllowance);
+  const giftTax = taxableGiftBase * input.giftTaxRate;
   const realEstateTax = propertyValue * input.realEstateTaxRate;
 
   // Grunderwerbsteuer aufgeteilt auf Gebäude und Grundstück (proportional zum Kaufpreis)
@@ -377,6 +391,8 @@ function calculateProjection(input) {
 
   return {
     input,
+    giftTaxAllowance,
+    taxableGiftBase,
     annualRent,
     giftTax,
     realEstateTax,
@@ -391,9 +407,11 @@ function calculateProjection(input) {
 }
 
 const DEFAULT_RESULT = calculateProjection({
-  ...validateFormValues(DEFAULT_FORM_VALUES).input,
-  giftTaxRate: getRelationshipOption(DEFAULT_RELATIONSHIP_ID).giftTaxRate,
-  surplusToRepayment: false,
+  ...createProjectionInput(
+    validateFormValues(DEFAULT_FORM_VALUES).input,
+    getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+    false,
+  ),
 });
 
 const STORAGE_KEY = "familienstiftung-rechner-v1";
@@ -443,11 +461,13 @@ export default function Home() {
         surplusToRepayment: nextSurplusToRepayment,
         bundesland: nextBundesland,
         result: nextValidation.input
-          ? calculateProjection({
-              ...nextValidation.input,
-              giftTaxRate: nextRelationship.giftTaxRate,
-              surplusToRepayment: nextSurplusToRepayment,
-            })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                nextRelationship,
+                nextSurplusToRepayment,
+              ),
+            )
           : DEFAULT_RESULT,
       });
     } catch {
@@ -484,7 +504,7 @@ export default function Home() {
     {
       title: "Schenkungssteuer bei Gründung",
       value: formatCurrency(result.giftTax),
-      detail: `${selectedRelationship.shortLabel}: ${formatDecimalAsPercent(result.input.giftTaxRate)}`,
+      detail: `${selectedRelationship.shortLabel}: ${formatDecimalAsPercent(result.input.giftTaxRate)}, Freibetrag ${formatCurrency(result.giftTaxAllowance)}`,
     },
     {
       title: "Grunderwerbsteuer",
@@ -653,11 +673,13 @@ export default function Home() {
         ...currentState,
         formValues: nextFormValues,
         result: nextValidation.input
-          ? calculateProjection({
-              ...nextValidation.input,
-              giftTaxRate: getRelationshipOption(currentState.relationshipId).giftTaxRate,
-              surplusToRepayment: currentState.surplusToRepayment,
-            })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+              ),
+            )
           : currentState.result,
       };
     });
@@ -671,11 +693,13 @@ export default function Home() {
         ...currentState,
         relationshipId: nextRelationship.id,
         result: nextValidation.input
-          ? calculateProjection({
-              ...nextValidation.input,
-              giftTaxRate: nextRelationship.giftTaxRate,
-              surplusToRepayment: currentState.surplusToRepayment,
-            })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                nextRelationship,
+                currentState.surplusToRepayment,
+              ),
+            )
           : currentState.result,
       };
     });
@@ -688,7 +712,13 @@ export default function Home() {
         ...currentState,
         surplusToRepayment: checked,
         result: nextValidation.input
-          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: checked })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                checked,
+              ),
+            )
           : currentState.result,
       };
     });
@@ -706,7 +736,13 @@ export default function Home() {
         bundesland: name || null,
         formValues: nextFormValues,
         result: nextValidation.input
-          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: currentState.surplusToRepayment })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+              ),
+            )
           : currentState.result,
       };
     });
@@ -761,7 +797,7 @@ export default function Home() {
               ))}
             </div>
             <p className={styles.hint}>
-              Der Schenkungssteuersatz wird aus der ausgewählten Verwandtschaftsgruppe abgeleitet.
+              Schenkungssteuersatz und pauschaler Freibetrag werden aus der ausgewählten Verwandtschaftsgruppe abgeleitet.
             </p>
           </fieldset>
           <div className={styles.bundeslandRow}>

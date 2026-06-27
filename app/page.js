@@ -266,10 +266,10 @@ function calculateProjection(input) {
       annualRent -
       input.annualAdminCost -
       annualInterest;
-    const availableCashBeforeRepayment = Math.max(0, foundationCash + foundationCashFlow);
+    const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
     const scheduledRepayment = Math.min(
       scheduledRepaymentTarget,
-      availableCashBeforeRepayment,
+      Math.max(0, availableCashBeforeRepayment),
     );
 
     // Jährlichen Überschuss als Sondertilgung verwenden

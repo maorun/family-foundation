@@ -68,6 +68,33 @@
   max-width: 320px;
 }
 
+.radioFieldset {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.radioOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #0f172a;
+}
+
+.radio {
+  margin-top: 2px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  accent-color: #0f4c81;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

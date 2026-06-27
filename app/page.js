@@ -13,13 +13,6 @@ const FIELD_DEFINITIONS = [
     defaultValue: 100000,
   },
   {
-    id: "giftTaxRate",
-    label: "Schenkungssteuer auf Gründungskapital (%)",
-    min: 0,
-    step: "0.1",
-    defaultValue: 0,
-  },
-  {
     id: "annualAdminCost",
     label: "Verwaltungskosten p.a. (€)",
     min: 0,
@@ -102,6 +95,42 @@ const FIELD_DEFINITIONS = [
   },
 ];
 
+// Modellannahme: Vereinfachte feste Schenkungssteuer je Begünstigtenkreis
+// mit pauschalem Freibetrag gemäß gewählter Verwandtschaftsgruppe.
+// (ohne Stufenlogik und Sonderfälle).
+const RELATIONSHIP_OPTIONS = [
+  {
+    id: "class1-children-only",
+    label: "Reine Kinder-Stiftung: ausschließlich Ehe-/Lebenspartner oder eigene Kinder (Steuerklasse I, Freibetrag 400.000 €)",
+    shortLabel: "Steuerklasse I (400.000 €)",
+    giftTaxRate: 0.15,
+    giftTaxAllowance: 400_000,
+  },
+  {
+    id: "class1-multigeneration",
+    label: "Mehrgenerationen-Stiftung: auch Enkel/Urenkel als (spätere) Begünstigte (Steuerklasse I, Freibetrag 100.000 €)",
+    shortLabel: "Steuerklasse I (100.000 €)",
+    giftTaxRate: 0.15,
+    giftTaxAllowance: 100_000,
+  },
+  {
+    id: "class2",
+    label: "Erweiterte Familie: z. B. Geschwister, Nichten/Neffen, Schwiegerkinder (Steuerklasse II, Freibetrag 20.000 €)",
+    shortLabel: "Steuerklasse II (20.000 €)",
+    giftTaxRate: 0.25,
+    giftTaxAllowance: 20_000,
+  },
+  {
+    id: "class3",
+    label: "Nicht verwandt / Dritte (Steuerklasse III, Freibetrag 20.000 €)",
+    shortLabel: "Steuerklasse III (20.000 €)",
+    giftTaxRate: 0.3,
+    giftTaxAllowance: 20_000,
+  },
+];
+
+const DEFAULT_RELATIONSHIP_ID = RELATIONSHIP_OPTIONS[0].id;
+
 
 const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },
@@ -149,6 +178,10 @@ function formatCurrency(value) {
 
 function formatPercent(value) {
   return `${percent.format(value)} %`;
+}
+
+function formatDecimalAsPercent(rate) {
+  return formatPercent(rate * 100);
 }
 
 function createSvgLinePath(points) {
@@ -206,7 +239,6 @@ function validateFormValues(formValues) {
     invalidIds,
     input: {
       initialCapital: parsedValues.initialCapital,
-      giftTaxRate: parsedValues.giftTaxRate / 100,
       annualAdminCost: parsedValues.annualAdminCost,
       loanAmount: parsedValues.loanAmount,
       loanInterestRate: parsedValues.loanInterestRate / 100,
@@ -222,10 +254,28 @@ function validateFormValues(formValues) {
   };
 }
 
+function getRelationshipOption(relationshipId) {
+  return (
+    RELATIONSHIP_OPTIONS.find((option) => option.id === relationshipId) ??
+    RELATIONSHIP_OPTIONS[0]
+  );
+}
+
+function createProjectionInput(validatedInput, relationship, surplusToRepayment) {
+  return {
+    ...validatedInput,
+    giftTaxRate: relationship.giftTaxRate,
+    giftTaxAllowance: relationship.giftTaxAllowance,
+    surplusToRepayment,
+  };
+}
+
 function calculateProjection(input) {
   const propertyValue = input.buildingValue + input.landValue;
   const annualRent = input.monthlyRent * 12;
-  const giftTax = input.initialCapital * input.giftTaxRate;
+  const giftTaxAllowance = Math.max(0, input.giftTaxAllowance ?? 0);
+  const taxableGiftBase = Math.max(0, input.initialCapital - giftTaxAllowance);
+  const giftTax = taxableGiftBase * input.giftTaxRate;
   const realEstateTax = propertyValue * input.realEstateTaxRate;
 
   // Grunderwerbsteuer aufgeteilt auf Gebäude und Grundstück (proportional zum Kaufpreis)
@@ -348,6 +398,8 @@ function calculateProjection(input) {
 
   return {
     input,
+    giftTaxAllowance,
+    taxableGiftBase,
     annualRent,
     giftTax,
     realEstateTax,
@@ -362,8 +414,11 @@ function calculateProjection(input) {
 }
 
 const DEFAULT_RESULT = calculateProjection({
-  ...validateFormValues(DEFAULT_FORM_VALUES).input,
-  surplusToRepayment: false,
+  ...createProjectionInput(
+    validateFormValues(DEFAULT_FORM_VALUES).input,
+    getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+    false,
+  ),
 });
 
 const STORAGE_KEY = "familienstiftung-rechner-v1";
@@ -386,8 +441,9 @@ function ServiceWorkerRegistration() {
 }
 
 export default function Home() {
-  const [{ formValues, surplusToRepayment, bundesland, result }, setState] = useState({
+  const [{ formValues, relationshipId, surplusToRepayment, bundesland, result }, setState] = useState({
     formValues: DEFAULT_FORM_VALUES,
+    relationshipId: DEFAULT_RELATIONSHIP_ID,
     surplusToRepayment: false,
     bundesland: null,
     result: DEFAULT_RESULT,
@@ -400,16 +456,25 @@ export default function Home() {
       if (!saved) return;
       const parsed = JSON.parse(saved);
       const nextFormValues = { ...DEFAULT_FORM_VALUES, ...parsed.formValues };
+      const nextRelationshipId = parsed.relationshipId ?? DEFAULT_RELATIONSHIP_ID;
       const nextSurplusToRepayment = parsed.surplusToRepayment ?? false;
       const nextBundesland = parsed.bundesland ?? null;
       const nextValidation = validateFormValues(nextFormValues);
+      const nextRelationship = getRelationshipOption(nextRelationshipId);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({
         formValues: nextFormValues,
+        relationshipId: nextRelationship.id,
         surplusToRepayment: nextSurplusToRepayment,
         bundesland: nextBundesland,
         result: nextValidation.input
-          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: nextSurplusToRepayment })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                nextRelationship,
+                nextSurplusToRepayment,
+              ),
+            )
           : DEFAULT_RESULT,
       });
     } catch {
@@ -421,16 +486,23 @@ export default function Home() {
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ formValues, surplusToRepayment, bundesland }));
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ formValues, relationshipId, surplusToRepayment, bundesland }),
+        );
       } catch {
         // ignore storage errors
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [formValues, surplusToRepayment, bundesland]);
+  }, [formValues, relationshipId, surplusToRepayment, bundesland]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
   const hasInvalidFields = validation.invalidIds.length > 0;
+  const selectedRelationship = useMemo(
+    () => getRelationshipOption(relationshipId),
+    [relationshipId],
+  );
 
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
@@ -439,7 +511,7 @@ export default function Home() {
     {
       title: "Schenkungssteuer bei Gründung",
       value: formatCurrency(result.giftTax),
-      detail: formatPercent(result.input.giftTaxRate * 100),
+      detail: `${selectedRelationship.shortLabel}: ${formatDecimalAsPercent(result.input.giftTaxRate)}, Freibetrag ${formatCurrency(result.giftTaxAllowance)}`,
     },
     {
       title: "Grunderwerbsteuer",
@@ -608,10 +680,33 @@ export default function Home() {
         ...currentState,
         formValues: nextFormValues,
         result: nextValidation.input
-          ? calculateProjection({
-              ...nextValidation.input,
-              surplusToRepayment: currentState.surplusToRepayment,
-            })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleRelationshipChange(nextRelationshipId) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(currentState.formValues);
+      const nextRelationship = getRelationshipOption(nextRelationshipId);
+      return {
+        ...currentState,
+        relationshipId: nextRelationship.id,
+        result: nextValidation.input
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                nextRelationship,
+                currentState.surplusToRepayment,
+              ),
+            )
           : currentState.result,
       };
     });
@@ -624,7 +719,13 @@ export default function Home() {
         ...currentState,
         surplusToRepayment: checked,
         result: nextValidation.input
-          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: checked })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                checked,
+              ),
+            )
           : currentState.result,
       };
     });
@@ -642,7 +743,13 @@ export default function Home() {
         bundesland: name || null,
         formValues: nextFormValues,
         result: nextValidation.input
-          ? calculateProjection({ ...nextValidation.input, surplusToRepayment: currentState.surplusToRepayment })
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+              ),
+            )
           : currentState.result,
       };
     });
@@ -679,6 +786,27 @@ export default function Home() {
 
         <section className={styles.panel}>
           <h2>Eingaben</h2>
+          <fieldset className={styles.radioFieldset}>
+            <legend className={styles.fieldLabel}>Verwandtschaftsgruppe der Begünstigten</legend>
+            <div className={styles.radioGroup}>
+              {RELATIONSHIP_OPTIONS.map((option) => (
+                <label key={option.id} className={styles.radioOption}>
+                  <input
+                    type="radio"
+                    name="relationship"
+                    value={option.id}
+                    checked={relationshipId === option.id}
+                    onChange={() => handleRelationshipChange(option.id)}
+                    className={styles.radio}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className={styles.hint}>
+              Für die Erstausstattung gilt die günstigste Steuerklasse aus dem Kreis der Begünstigten; Schenkungssteuersatz und pauschaler Freibetrag werden daraus abgeleitet.
+            </p>
+          </fieldset>
           <div className={styles.bundeslandRow}>
             <label htmlFor="bundesland" className={styles.fieldLabel}>
               Bundesland (setzt Grunderwerbsteuer-Satz)

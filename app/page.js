@@ -285,6 +285,7 @@ function calculateProjection(input) {
     const lenderNetCashFlow =
       scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
+    const prevFoundationCash = foundationCash;
     foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
     remainingLoan -= scheduledRepayment + extraRepayment;
     remainingDepreciableBuildingValue = Math.max(
@@ -315,6 +316,7 @@ function calculateProjection(input) {
       loanAtStartOfYear,
       scheduledRepayment,
       extraRepayment,
+      prevFoundationCash,
       // GuV Person
       personGuvInterest: annualInterest,
       personGuvTax: lenderTax,
@@ -770,6 +772,11 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Kassenbestand</dt>
                       <dd>{formatCurrency(row.foundationCash)}</dd>
+                      {row.year === 0 ? (
+                        <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                      ) : (
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.foundationCashFlow)} (Überschuss) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""})</small>
+                      )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Bilanzsumme</dt>

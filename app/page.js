@@ -95,28 +95,35 @@ const FIELD_DEFINITIONS = [
   },
 ];
 
-// Modellannahme: Vereinfachte feste Schenkungssteuer je Steuerklasse
-// mit pauschalem Freibetrag pro Verwandtschaftsgruppe.
+// Modellannahme: Vereinfachte feste Schenkungssteuer je Begünstigtenkreis
+// mit pauschalem Freibetrag gemäß gewählter Verwandtschaftsgruppe.
 // (ohne Stufenlogik und Sonderfälle).
 const RELATIONSHIP_OPTIONS = [
   {
-    id: "class1",
-    label: "Ehe-/Lebenspartner, Kinder oder Enkel (Steuerklasse I, pauschaler Freibetrag 400.000 €)",
-    shortLabel: "Steuerklasse I",
+    id: "class1-children-only",
+    label: "Reine Kinder-Stiftung: ausschließlich Ehe-/Lebenspartner oder eigene Kinder (Steuerklasse I, Freibetrag 400.000 €)",
+    shortLabel: "Steuerklasse I (400.000 €)",
     giftTaxRate: 0.15,
     giftTaxAllowance: 400_000,
   },
   {
+    id: "class1-multigeneration",
+    label: "Mehrgenerationen-Stiftung: auch Enkel/Urenkel als (spätere) Begünstigte (Steuerklasse I, Freibetrag 100.000 €)",
+    shortLabel: "Steuerklasse I (100.000 €)",
+    giftTaxRate: 0.15,
+    giftTaxAllowance: 100_000,
+  },
+  {
     id: "class2",
-    label: "Geschwister, Nichten/Neffen, Schwiegerkinder (Steuerklasse II, pauschaler Freibetrag 20.000 €)",
-    shortLabel: "Steuerklasse II",
+    label: "Erweiterte Familie: z. B. Geschwister, Nichten/Neffen, Schwiegerkinder (Steuerklasse II, Freibetrag 20.000 €)",
+    shortLabel: "Steuerklasse II (20.000 €)",
     giftTaxRate: 0.25,
     giftTaxAllowance: 20_000,
   },
   {
     id: "class3",
-    label: "Nicht verwandt (Steuerklasse III, pauschaler Freibetrag 20.000 €)",
-    shortLabel: "Steuerklasse III",
+    label: "Nicht verwandt / Dritte (Steuerklasse III, Freibetrag 20.000 €)",
+    shortLabel: "Steuerklasse III (20.000 €)",
     giftTaxRate: 0.3,
     giftTaxAllowance: 20_000,
   },
@@ -797,7 +804,7 @@ export default function Home() {
               ))}
             </div>
             <p className={styles.hint}>
-              Schenkungssteuersatz und pauschaler Freibetrag werden aus der ausgewählten Verwandtschaftsgruppe abgeleitet.
+              Für die Erstausstattung gilt die günstigste Steuerklasse aus dem Kreis der Begünstigten; Schenkungssteuersatz und pauschaler Freibetrag werden daraus abgeleitet.
             </p>
           </fieldset>
           <div className={styles.bundeslandRow}>

@@ -297,9 +297,9 @@ function calculateProjection(input) {
   let cumulativePersonNetCash = 0;
 
   // Vergleichsszenario: Privatvermietung ohne Stiftung
-  // Kein Schenkungssteuerabzug, Mieteinnahmen zum persönlichen Steuersatz besteuert
+  // Kein Schenkungssteuerabzug, Mieteinnahmen zum persönlichen Steuersatz besteuert,
+  // kein Darlehen, keine Verwaltungskosten
   let privateCash = input.initialCapital + input.loanAmount - propertyValue - realEstateTax;
-  let privateRemainingLoan = input.loanAmount;
   let privateRemainingDepreciableBuilding = depreciableBuildingBase;
 
   const buildingBookValue0 = depreciableBuildingBase + landBookBase;
@@ -318,7 +318,7 @@ function calculateProjection(input) {
       totalAssets: foundationCash + buildingBookValue0,
       equity: foundationCash + buildingBookValue0 - remainingLoan,
       // Vergleichsvermögen Privatvermietung Jahr 0
-      compareWealth: privateCash + propertyValue - privateRemainingLoan,
+      compareWealth: privateCash + propertyValue,
     },
   ];
 
@@ -369,18 +369,14 @@ function calculateProjection(input) {
     );
     cumulativePersonNetCash += lenderNetCashFlow;
 
-    // Vergleichsszenario: Privatvermietung – gleiche Tilgungslogik, Steuern auf Miete
-    const privateInterest = privateRemainingLoan * input.loanInterestRate;
-    const privateRepayment = Math.min(privateRemainingLoan, input.loanAmount * input.loanRepaymentRate);
+    // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
     const privateDepreciation = Math.min(
       privateRemainingDepreciableBuilding,
       depreciableBuildingBase * input.depreciationRate,
     );
-    const privateTaxableRentalIncome =
-      annualRent - input.annualAdminCost - privateInterest - privateDepreciation;
+    const privateTaxableRentalIncome = annualRent - privateDepreciation;
     const privateIncomeTax = privateTaxableRentalIncome * input.personalTaxRate;
-    privateCash += annualRent - input.annualAdminCost - privateInterest - privateRepayment - privateIncomeTax;
-    privateRemainingLoan -= privateRepayment;
+    privateCash += annualRent - privateIncomeTax;
     privateRemainingDepreciableBuilding = Math.max(
       0,
       privateRemainingDepreciableBuilding - privateDepreciation,
@@ -419,7 +415,7 @@ function calculateProjection(input) {
       totalAssets: foundationCash + buildingBookValue,
       equity: foundationCash + buildingBookValue - remainingLoan,
       // Vergleichsvermögen Privatvermietung
-      compareWealth: privateCash + propertyValue - privateRemainingLoan,
+      compareWealth: privateCash + propertyValue,
     });
   }
 
@@ -588,7 +584,7 @@ export default function Home() {
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (Privatvermietung)`,
       value: formatCurrency(lastYear.compareWealth),
-      detail: `Ohne Stiftung, Mieteinnahmen zu ${formatPercent(result.input.personalTaxRate * 100)} versteuert, kein Schenkungssteuerabzug`,
+      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(result.input.personalTaxRate * 100)} versteuert`,
     },
   ];
 
@@ -1078,7 +1074,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Vergleichsvermögen (Privatvermietung)</dt>
                       <dd>{formatCurrency(row.compareWealth)}</dd>
-                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) − Restdarlehen — ohne Stiftung, Miete zu {formatPercent(result.input.personalTaxRate * 100)} versteuert</small>
+                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(result.input.personalTaxRate * 100)} versteuert</small>
                     </div>
                   </dl>
                 </div>

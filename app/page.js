@@ -408,8 +408,8 @@ function calculateProjection(input) {
       erbsRemainingLiability -= erbsInstallmentPaid;
     }
 
-    // Erbersatzsteuer: Auslösung alle 30 Jahre
-    if (year % ERBERSATZ_CYCLE_YEARS === 0) {
+    // Erbersatzsteuer: Auslösung alle 30 Jahre (frühestens Jahr 30, nie Jahr 0)
+    if (year > 0 && year % ERBERSATZ_CYCLE_YEARS === 0) {
       const netWealthForErbs = foundationCash + propertyValue - remainingLoan;
       const perChildTaxable = Math.max(
         0,

@@ -1433,88 +1433,103 @@ export default function Home() {
 
                 <div className={styles.yearSection}>
                   <h4 className={styles.yearSectionTitle}>Übersicht</h4>
-                  <dl className={styles.dataGrid}>
-                    <div className={styles.dataItem}>
-                      {row.year > 0 ? (
-                        <>
-                          <dt>Stiftung: Jährl. Liquiditätsüberschuss</dt>
-                          <dd className={row.foundationCashFlow < 0 ? styles.negative : styles.positive}>
-                            {formatCurrency(row.foundationCashFlow)}
-                          </dd>
-                          <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen)</small>
-                        </>
-                      ) : (
-                        <>
-                          <dt>Stiftung: Startliquidität</dt>
-                          <dd>{formatCurrency(row.foundationCash)}</dd>
-                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
-                        </>
-                      )}
+                  <div className={styles.guvColumns}>
+                    <div className={styles.guvColumn}>
+                      <h5 className={styles.guvColumnTitle}>Stiftung</h5>
+                      <dl className={styles.dataGrid}>
+                        <div className={styles.dataItem}>
+                          {row.year > 0 ? (
+                            <>
+                              <dt>Jährl. Liquiditätsüberschuss</dt>
+                              <dd className={row.foundationCashFlow < 0 ? styles.negative : styles.positive}>
+                                {formatCurrency(row.foundationCashFlow)}
+                              </dd>
+                              <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen)</small>
+                            </>
+                          ) : (
+                            <>
+                              <dt>Startliquidität</dt>
+                              <dd>{formatCurrency(row.foundationCash)}</dd>
+                              <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                            </>
+                          )}
+                        </div>
+                        <div className={styles.dataItem}>
+                          <dt>Steuerliches Ergebnis</dt>
+                          <dd>{formatCurrency(row.taxableResult)}</dd>
+                          {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>}
+                        </div>
+                        {row.year === 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Grunderwerbsteuer (Anschaffungskosten)</dt>
+                            <dd className={styles.negative}>{formatCurrency(result.realEstateTax)}</dd>
+                            <small className={styles.formula}>{formatPercent(result.input.realEstateTaxRate * 100)} × {formatCurrency(result.propertyValue)} (Kaufpreis) — Gebäudeanteil {formatCurrency(result.realEstateTaxBuildingPortion)} wird abgeschrieben</small>
+                          </div>
+                        )}
+                        <div className={styles.dataItem}>
+                          <dt>Nettovermögen</dt>
+                          <dd>{formatCurrency(row.foundationWealth)}</dd>
+                          <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
+                        </div>
+                        {row.erbsTriggeredAmount > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Erbersatzsteuer (fällig, § 1 Abs. 1 Nr. 4 ErbStG)</dt>
+                            <dd className={styles.negative}>{formatCurrency(row.erbsTriggeredAmount)}</dd>
+                            <small className={styles.formula}>
+                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
+                              {result.input.erbersatzsteuerSpread
+                                ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
+                                : " — Sofortzahlung"}
+                            </small>
+                          </div>
+                        )}
+                        {row.erbsInstallmentPaid > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Erbersatzsteuer: Jahresrate (Zahlung an Finanzamt)</dt>
+                            <dd className={styles.negative}>{formatCurrency(row.erbsInstallmentPaid)}</dd>
+                          </div>
+                        )}
+                      </dl>
                     </div>
-                    <div className={styles.dataItem}>
-                      <dt>Stiftung: Steuerliches Ergebnis</dt>
-                      <dd>{formatCurrency(row.taxableResult)}</dd>
-                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>}
+                    <div className={styles.guvColumn}>
+                      <h5 className={styles.guvColumnTitle}>Privat (Darlehensgeber)</h5>
+                      <dl className={styles.dataGrid}>
+                        <div className={styles.dataItem}>
+                          <dt>Restdarlehen</dt>
+                          <dd>{formatCurrency(row.remainingLoan)}</dd>
+                          {row.year > 0 && (
+                            <small className={styles.formula}>
+                              {formatCurrency(row.loanAtStartOfYear)} (Anfangsschuld) − {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` − ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""}
+                            </small>
+                          )}
+                        </div>
+                        <div className={styles.dataItem}>
+                          <dt>Netto-Zufluss</dt>
+                          <dd>{formatCurrency(row.personNetCashFlow)}</dd>
+                          {row.year > 0 && (
+                            <small className={styles.formula}>
+                              {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""} + {formatCurrency(row.personGuvResult)} (Netto-Zinsergebnis)
+                            </small>
+                          )}
+                        </div>
+                        <div className={styles.dataItem}>
+                          <dt>Vermögensposition</dt>
+                          <dd>{formatCurrency(row.personAssetPosition)}</dd>
+                          {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} (Restdarlehen) + {formatCurrency(row.cumulativePersonNetCash)} (kum. Netto-Zuflüsse)</small>}
+                        </div>
+                      </dl>
                     </div>
-                    {row.year === 0 && (
-                      <div className={styles.dataItem}>
-                        <dt>Grunderwerbsteuer (Anschaffungskosten)</dt>
-                        <dd className={styles.negative}>{formatCurrency(result.realEstateTax)}</dd>
-                        <small className={styles.formula}>{formatPercent(result.input.realEstateTaxRate * 100)} × {formatCurrency(result.propertyValue)} (Kaufpreis) — Gebäudeanteil {formatCurrency(result.realEstateTaxBuildingPortion)} wird abgeschrieben</small>
-                      </div>
-                    )}
-                    <div className={styles.dataItem}>
-                      <dt>Stiftung: Nettovermögen</dt>
-                      <dd>{formatCurrency(row.foundationWealth)}</dd>
-                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
+                    <div className={styles.guvColumn}>
+                      <h5 className={styles.guvColumnTitle}>Privat ohne Stiftung (Vergleich)</h5>
+                      <dl className={styles.dataGrid}>
+                        <div className={styles.dataItem}>
+                          <dt>Vergleichsvermögen</dt>
+                          <dd>{formatCurrency(row.compareWealth)}</dd>
+                          <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
+                        </div>
+                      </dl>
                     </div>
-                    {row.erbsTriggeredAmount > 0 && (
-                      <div className={styles.dataItem}>
-                        <dt>Erbersatzsteuer (fällig, § 1 Abs. 1 Nr. 4 ErbStG)</dt>
-                        <dd className={styles.negative}>{formatCurrency(row.erbsTriggeredAmount)}</dd>
-                        <small className={styles.formula}>
-                          {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
-                          {result.input.erbersatzsteuerSpread
-                            ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
-                            : " — Sofortzahlung"}
-                        </small>
-                      </div>
-                    )}
-                    {row.erbsInstallmentPaid > 0 && (
-                      <div className={styles.dataItem}>
-                        <dt>Erbersatzsteuer: Jahresrate (Zahlung an Finanzamt)</dt>
-                        <dd className={styles.negative}>{formatCurrency(row.erbsInstallmentPaid)}</dd>
-                      </div>
-                    )}
-                    <div className={styles.dataItem}>
-                      <dt>Restdarlehen</dt>
-                      <dd>{formatCurrency(row.remainingLoan)}</dd>
-                      {row.year > 0 && (
-                        <small className={styles.formula}>
-                          {formatCurrency(row.loanAtStartOfYear)} (Anfangsschuld) − {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` − ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""}
-                        </small>
-                      )}
-                    </div>
-                    <div className={styles.dataItem}>
-                      <dt>Person: Netto-Zufluss</dt>
-                      <dd>{formatCurrency(row.personNetCashFlow)}</dd>
-                      {row.year > 0 && (
-                        <small className={styles.formula}>
-                          {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""} + {formatCurrency(row.personGuvResult)} (Netto-Zinsergebnis)
-                        </small>
-                      )}
-                    </div>
-                    <div className={styles.dataItem}>
-                      <dt>Person: Vermögensposition</dt>
-                      <dd>{formatCurrency(row.personAssetPosition)}</dd>
-                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} (Restdarlehen) + {formatCurrency(row.cumulativePersonNetCash)} (kum. Netto-Zuflüsse)</small>}
-                    </div>
-                    <div className={styles.dataItem}>
-                      <dt>Vergleichsvermögen (Privatvermietung)</dt>
-                      <dd>{formatCurrency(row.compareWealth)}</dd>
-                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
-                    </div>
-                  </dl>
+                  </div>
                 </div>
 
                 {row.year > 0 && (

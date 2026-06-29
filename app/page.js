@@ -256,7 +256,7 @@ function getRelationshipOption(relationshipId) {
 
 function validatePersonalTaxSteps(steps) {
   if (!steps || steps.length === 0) {
-    return { invalidIndices: [0], parsedSteps: null };
+    return { invalidIndices: [], parsedSteps: null };
   }
 
   const invalidIndices = [];
@@ -290,13 +290,13 @@ function validatePersonalTaxSteps(steps) {
 }
 
 function getPersonalTaxRateForYear(personalTaxSteps, year) {
-  let rate = personalTaxSteps[0].rate;
-  for (const step of personalTaxSteps) {
-    if (step.fromYear <= year) {
-      rate = step.rate;
+  // personalTaxSteps is sorted ascending by fromYear; iterate in reverse for efficiency
+  for (let i = personalTaxSteps.length - 1; i >= 0; i--) {
+    if (personalTaxSteps[i].fromYear <= year) {
+      return personalTaxSteps[i].rate;
     }
   }
-  return rate;
+  return personalTaxSteps[0].rate;
 }
 
 function createProjectionInput(validatedInput, relationship, surplusToRepayment, personalTaxSteps) {
@@ -571,7 +571,7 @@ export default function Home() {
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
   const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
   const hasInvalidFields = validation.invalidIds.length > 0;
-  const hasInvalidTaxSteps = taxStepsValidation.invalidIndices.length > 0;
+  const hasInvalidTaxSteps = taxStepsValidation.parsedSteps === null;
   const selectedRelationship = useMemo(
     () => getRelationshipOption(relationshipId),
     [relationshipId],

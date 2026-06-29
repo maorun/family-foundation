@@ -77,14 +77,6 @@ const FIELD_DEFINITIONS = [
     defaultValue: 2,
   },
   {
-    id: "personalTaxRate",
-    label: "Persönlicher Steuersatz der Person (%)",
-    min: 0,
-    max: 100,
-    step: "0.1",
-    defaultValue: 42,
-  },
-  {
     id: "projectionYears",
     label: "Betrachtungszeitraum (Jahre)",
     min: 1,
@@ -130,6 +122,8 @@ const RELATIONSHIP_OPTIONS = [
 ];
 
 const DEFAULT_RELATIONSHIP_ID = RELATIONSHIP_OPTIONS[0].id;
+
+const DEFAULT_PERSONAL_TAX_STEPS = [{ fromYear: "1", rate: "42" }];
 
 // Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG): fiktive Erbschaft alle 30 Jahre
 const ERBERSATZ_CYCLE_YEARS = 30;
@@ -253,7 +247,6 @@ function validateFormValues(formValues) {
       realEstateTaxRate: parsedValues.realEstateTaxRate / 100,
       monthlyRent: parsedValues.monthlyRent,
       depreciationRate: parsedValues.depreciationRate / 100,
-      personalTaxRate: parsedValues.personalTaxRate / 100,
       projectionYears: parsedValues.projectionYears,
     },
   };
@@ -266,12 +259,58 @@ function getRelationshipOption(relationshipId) {
   );
 }
 
-function createProjectionInput(validatedInput, relationship, surplusToRepayment, erbersatzsteuerSpread) {
+function validatePersonalTaxSteps(steps) {
+  if (!steps || steps.length === 0) {
+    return { invalidIndices: [], parsedSteps: null };
+  }
+
+  const invalidIndices = [];
+  const parsed = [];
+  const fromYears = new Set();
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const fromYear = parseNumber(String(step.fromYear ?? ""));
+    const rate = parseNumber(String(step.rate ?? ""));
+
+    let valid = true;
+    if (fromYear === null || !Number.isInteger(fromYear) || fromYear < 1) valid = false;
+    if (rate === null || rate < 0 || rate > 100) valid = false;
+    if (fromYear !== null && fromYears.has(fromYear)) valid = false;
+
+    if (!valid) {
+      invalidIndices.push(i);
+    } else {
+      fromYears.add(fromYear);
+      parsed.push({ fromYear, rate: rate / 100 });
+    }
+  }
+
+  if (invalidIndices.length > 0) {
+    return { invalidIndices, parsedSteps: null };
+  }
+
+  parsed.sort((a, b) => a.fromYear - b.fromYear);
+  return { invalidIndices: [], parsedSteps: parsed };
+}
+
+function getPersonalTaxRateForYear(personalTaxSteps, year) {
+  // personalTaxSteps is sorted ascending by fromYear; iterate in reverse for efficiency
+  for (let i = personalTaxSteps.length - 1; i >= 0; i--) {
+    if (personalTaxSteps[i].fromYear <= year) {
+      return personalTaxSteps[i].rate;
+    }
+  }
+  return personalTaxSteps[0].rate;
+}
+
+function createProjectionInput(validatedInput, relationship, surplusToRepayment, personalTaxSteps, erbersatzsteuerSpread) {
   return {
     ...validatedInput,
     giftTaxRate: relationship.giftTaxRate,
     giftTaxAllowance: relationship.giftTaxAllowance,
     surplusToRepayment,
+    personalTaxSteps,
     erbersatzsteuerSpread,
   };
 }
@@ -323,6 +362,7 @@ function calculateProjection(input) {
       remainingLoan,
       personNetCashFlow: 0,
       personAssetPosition: remainingLoan,
+      personalTaxRate: getPersonalTaxRateForYear(input.personalTaxSteps, 1),
       // Bilanz Jahr 0
       buildingBookValue: buildingBookValue0,
       totalAssets: foundationCash + buildingBookValue0,
@@ -337,6 +377,7 @@ function calculateProjection(input) {
   ];
 
   for (let year = 1; year <= input.projectionYears; year += 1) {
+    const yearPersonalTaxRate = getPersonalTaxRateForYear(input.personalTaxSteps, year);
     const annualInterest = remainingLoan * input.loanInterestRate;
     const scheduledRepaymentTarget = Math.min(
       remainingLoan,
@@ -370,7 +411,7 @@ function calculateProjection(input) {
       : 0;
 
     const loanAtStartOfYear = remainingLoan;
-    const lenderTax = annualInterest * input.personalTaxRate;
+    const lenderTax = annualInterest * yearPersonalTaxRate;
     const lenderNetCashFlow =
       scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
@@ -389,7 +430,7 @@ function calculateProjection(input) {
       depreciableBuildingBase * input.depreciationRate,
     );
     const privateTaxableRentalIncome = annualRent - privateDepreciation;
-    const privateIncomeTax = privateTaxableRentalIncome * input.personalTaxRate;
+    const privateIncomeTax = privateTaxableRentalIncome * yearPersonalTaxRate;
     privateCash += annualRent - privateIncomeTax;
     privateRemainingDepreciableBuilding = Math.max(
       0,
@@ -450,6 +491,7 @@ function calculateProjection(input) {
       personGuvInterest: annualInterest,
       personGuvTax: lenderTax,
       personGuvResult: annualInterest - lenderTax,
+      personalTaxRate: yearPersonalTaxRate,
       // Bilanz
       buildingDepreciableValue,
       buildingBookValue,
@@ -486,6 +528,7 @@ const DEFAULT_RESULT = calculateProjection({
     validateFormValues(DEFAULT_FORM_VALUES).input,
     getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
     false,
+    validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS).parsedSteps,
     true,
   ),
 });
@@ -510,12 +553,13 @@ function ServiceWorkerRegistration() {
 }
 
 export default function Home() {
-  const [{ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, result }, setState] = useState({
+  const [{ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, personalTaxSteps, result }, setState] = useState({
     formValues: DEFAULT_FORM_VALUES,
     relationshipId: DEFAULT_RELATIONSHIP_ID,
     surplusToRepayment: false,
     erbersatzsteuerSpread: true,
     bundesland: null,
+    personalTaxSteps: DEFAULT_PERSONAL_TAX_STEPS,
     result: DEFAULT_RESULT,
   });
 
@@ -530,7 +574,9 @@ export default function Home() {
       const nextSurplusToRepayment = parsed.surplusToRepayment ?? false;
       const nextErbersatzsteuerSpread = parsed.erbersatzsteuerSpread ?? true;
       const nextBundesland = parsed.bundesland ?? null;
+      const nextPersonalTaxSteps = parsed.personalTaxSteps ?? DEFAULT_PERSONAL_TAX_STEPS;
       const nextValidation = validateFormValues(nextFormValues);
+      const nextTaxValidation = validatePersonalTaxSteps(nextPersonalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({
@@ -539,12 +585,14 @@ export default function Home() {
         surplusToRepayment: nextSurplusToRepayment,
         erbersatzsteuerSpread: nextErbersatzsteuerSpread,
         bundesland: nextBundesland,
-        result: nextValidation.input
+        personalTaxSteps: nextPersonalTaxSteps,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
                 nextValidation.input,
                 nextRelationship,
                 nextSurplusToRepayment,
+                nextTaxValidation.parsedSteps,
                 nextErbersatzsteuerSpread,
               ),
             )
@@ -561,17 +609,19 @@ export default function Home() {
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland }),
+          JSON.stringify({ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, personalTaxSteps }),
         );
       } catch {
         // ignore storage errors
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland]);
+  }, [formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, personalTaxSteps]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
+  const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
   const hasInvalidFields = validation.invalidIds.length > 0;
+  const hasInvalidTaxSteps = taxStepsValidation.parsedSteps === null;
   const selectedRelationship = useMemo(
     () => getRelationshipOption(relationshipId),
     [relationshipId],
@@ -629,12 +679,12 @@ export default function Home() {
     {
       title: `Person: Vermögensposition Jahr ${result.input.projectionYears}`,
       value: formatCurrency(lastYear.personAssetPosition),
-      detail: `Persönlicher Steuersatz ${formatPercent(result.input.personalTaxRate * 100)}`,
+      detail: `Persönlicher Steuersatz ${formatPercent(lastYear.personalTaxRate * 100)}`,
     },
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (Privatvermietung)`,
       value: formatCurrency(lastYear.compareWealth),
-      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(result.input.personalTaxRate * 100)} versteuert`,
+      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert`,
     },
   ];
 
@@ -767,16 +817,18 @@ export default function Home() {
         [fieldId]: value,
       };
       const nextValidation = validateFormValues(nextFormValues);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
 
       return {
         ...currentState,
         formValues: nextFormValues,
-        result: nextValidation.input
+        result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
               ),
             )
@@ -788,16 +840,18 @@ export default function Home() {
   function handleRelationshipChange(nextRelationshipId) {
     setState((currentState) => {
       const nextValidation = validateFormValues(currentState.formValues);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       return {
         ...currentState,
         relationshipId: nextRelationship.id,
-        result: nextValidation.input
+        result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
                 nextValidation.input,
                 nextRelationship,
                 currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
               ),
             )
@@ -809,15 +863,17 @@ export default function Home() {
   function handleSurplusToggle(checked) {
     setState((currentState) => {
       const nextValidation = validateFormValues(currentState.formValues);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
         surplusToRepayment: checked,
-        result: nextValidation.input
+        result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
                 checked,
+                nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
               ),
             )
@@ -829,15 +885,17 @@ export default function Home() {
   function handleErbersatzsteuerSpreadToggle(checked) {
     setState((currentState) => {
       const nextValidation = validateFormValues(currentState.formValues);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
         erbersatzsteuerSpread: checked,
-        result: nextValidation.input
+        result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
                 checked,
               ),
             )
@@ -853,16 +911,93 @@ export default function Home() {
         ? { ...currentState.formValues, realEstateTaxRate: String(bl.rate) }
         : currentState.formValues;
       const nextValidation = validateFormValues(nextFormValues);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
         bundesland: name || null,
         formValues: nextFormValues,
-        result: nextValidation.input
+        result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.erbersatzsteuerSpread,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleTaxStepChange(index, field, value) {
+    setState((currentState) => {
+      const nextSteps = currentState.personalTaxSteps.map((step, i) =>
+        i === index ? { ...step, [field]: value } : step,
+      );
+      const nextValidation = validateFormValues(currentState.formValues);
+      const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
+      return {
+        ...currentState,
+        personalTaxSteps: nextSteps,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.erbersatzsteuerSpread,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleAddTaxStep() {
+    setState((currentState) => {
+      const lastStep = currentState.personalTaxSteps[currentState.personalTaxSteps.length - 1];
+      const lastFromYear = parseNumber(String(lastStep?.fromYear ?? "0")) ?? 0;
+      const newStep = { fromYear: String(lastFromYear + 1), rate: lastStep?.rate ?? "42" };
+      const nextSteps = [...currentState.personalTaxSteps, newStep];
+      const nextValidation = validateFormValues(currentState.formValues);
+      const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
+      return {
+        ...currentState,
+        personalTaxSteps: nextSteps,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.erbersatzsteuerSpread,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleRemoveTaxStep(index) {
+    setState((currentState) => {
+      if (currentState.personalTaxSteps.length <= 1) return currentState;
+      const nextSteps = currentState.personalTaxSteps.filter((_, i) => i !== index);
+      const nextValidation = validateFormValues(currentState.formValues);
+      const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
+      return {
+        ...currentState,
+        personalTaxSteps: nextSteps,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
               ),
             )
@@ -966,8 +1101,67 @@ export default function Home() {
               );
             })}
           </div>
+          <div className={styles.taxStepsSection}>
+            <span className={styles.fieldLabel}>Persönlicher Steuersatz der Person (%)</span>
+            <p className={styles.hint}>
+              Für jede Periode den Startzeitraum (ab welchem Jahr) und den zugehörigen Steuersatz eingeben.
+              Die zuletzt passende Periode gilt für alle nachfolgenden Jahre.
+            </p>
+            {personalTaxSteps.map((step, index) => {
+              const isInvalidStep = taxStepsValidation.invalidIndices.includes(index);
+              return (
+                <div key={index} className={styles.taxStepRow}>
+                  <div className={styles.taxStepField}>
+                    <label htmlFor={`taxStepFrom_${index}`} className={styles.taxStepLabel}>Ab Jahr</label>
+                    <input
+                      id={`taxStepFrom_${index}`}
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={step.fromYear}
+                      onChange={(event) => handleTaxStepChange(index, "fromYear", event.target.value)}
+                      className={`${styles.fieldInput} ${isInvalidStep ? styles.fieldInputInvalid : ""}`.trim()}
+                      aria-invalid={isInvalidStep}
+                      required
+                    />
+                  </div>
+                  <div className={styles.taxStepField}>
+                    <label htmlFor={`taxStepRate_${index}`} className={styles.taxStepLabel}>Steuersatz (%)</label>
+                    <input
+                      id={`taxStepRate_${index}`}
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={step.rate}
+                      onChange={(event) => handleTaxStepChange(index, "rate", event.target.value)}
+                      className={`${styles.fieldInput} ${isInvalidStep ? styles.fieldInputInvalid : ""}`.trim()}
+                      aria-invalid={isInvalidStep}
+                      required
+                    />
+                  </div>
+                  {personalTaxSteps.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTaxStep(index)}
+                      className={styles.taxStepRemoveButton}
+                    >
+                      Entfernen
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={handleAddTaxStep}
+              className={styles.taxStepAddButton}
+            >
+              + Periode hinzufügen
+            </button>
+          </div>
           <p className={styles.hint}>Leere oder ungültige Eingaben werden rot markiert.</p>
-          {hasInvalidFields ? (
+          {hasInvalidFields || hasInvalidTaxSteps ? (
             <p className={styles.validationMessage}>
               Bitte korrigieren Sie die rot markierten Eingaben. Bis dahin bleiben
               die zuletzt gültigen Ergebnisse sichtbar.
@@ -1182,7 +1376,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Vergleichsvermögen (Privatvermietung)</dt>
                       <dd>{formatCurrency(row.compareWealth)}</dd>
-                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(result.input.personalTaxRate * 100)} versteuert</small>
+                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert</small>
                     </div>
                   </dl>
                 </div>
@@ -1233,7 +1427,7 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Einkommensteuer auf Zinsen</dt>
                             <dd>{formatCurrency(row.personGuvTax)}</dd>
-                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} (Zinserträge) × {formatPercent(result.input.personalTaxRate * 100)} (Steuersatz)</small>
+                            <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} (Zinserträge) × {formatPercent(row.personalTaxRate * 100)} (Steuersatz)</small>
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Netto-Zinsergebnis</dt>

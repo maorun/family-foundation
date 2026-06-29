@@ -853,6 +853,17 @@ export default function Home() {
           index === 0 || index === allTicks.length - 1 || tick.index % xTickStep === 0,
       );
 
+    const breakEvenIndex = result.rows.findIndex(
+      (row) => row.foundationWealth + row.personAssetPosition >= row.compareWealth,
+    );
+    const breakEven =
+      breakEvenIndex >= 0
+        ? {
+            year: result.rows[breakEvenIndex].year,
+            x: xFromIndex(breakEvenIndex),
+          }
+        : null;
+
     return {
       chartWidth,
       chartHeight,
@@ -861,6 +872,7 @@ export default function Home() {
       lines,
       yTicks,
       xTicks,
+      breakEven,
     };
   }, [result.rows]);
 
@@ -1368,6 +1380,25 @@ export default function Home() {
                   />
                 </g>
               ))}
+
+              {wealthChart.breakEven && (
+                <g>
+                  <line
+                    x1={wealthChart.breakEven.x}
+                    y1={wealthChart.margin.top}
+                    x2={wealthChart.breakEven.x}
+                    y2={wealthChart.chartHeight - wealthChart.margin.bottom}
+                    className={styles.chartBreakEvenLine}
+                  />
+                  <text
+                    x={wealthChart.breakEven.x + 5}
+                    y={wealthChart.margin.top + 14}
+                    className={styles.chartBreakEvenLabel}
+                  >
+                    Break-Even: Jahr {wealthChart.breakEven.year}
+                  </text>
+                </g>
+              )}
             </svg>
           </div>
           <div className={styles.chartLegend}>
@@ -1382,6 +1413,15 @@ export default function Home() {
               </div>
             ))}
           </div>
+          {wealthChart.breakEven ? (
+            <p className={styles.breakEvenBadge}>
+              ✓ Break-Even erreicht in Jahr {wealthChart.breakEven.year} – ab diesem Jahr übersteigt das Gesamtvermögen (Stiftung) das Vergleichsvermögen (Privatvermietung).
+            </p>
+          ) : (
+            <p className={styles.breakEvenMissing}>
+              Kein Break-Even im Projektionszeitraum erreicht.
+            </p>
+          )}
         </section>
 
         <section className={styles.panel}>

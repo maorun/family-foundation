@@ -1415,7 +1415,7 @@ export default function Home() {
           </div>
           {wealthChart.breakEven ? (
             <p className={styles.breakEvenBadge}>
-              ✓ Break-Even erreicht in Jahr {wealthChart.breakEven.year} – ab diesem Jahr übersteigt das Gesamtvermögen (Stiftung) das Vergleichsvermögen (Privatvermietung).
+              ✓ Break-Even erreicht in Jahr {wealthChart.breakEven.year} – ab diesem Jahr erreicht oder übersteigt das Gesamtvermögen (Stiftung) das Vergleichsvermögen (Privatvermietung).
             </p>
           ) : (
             <p className={styles.breakEvenMissing}>

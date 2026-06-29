@@ -566,6 +566,12 @@ export default function Home() {
     () => getRelationshipOption(relationshipId),
     [relationshipId],
   );
+  const compareTaxCardDetail = result.input.comparePaysRealEstateTax
+    ? ", inkl. Grunderwerbsteuer"
+    : ", ohne Grunderwerbsteuer";
+  const compareTaxFormulaDetail = result.input.comparePaysRealEstateTax
+    ? `, mit ${formatCurrency(result.privateRealEstateTax)} GrESt`
+    : ", ohne GrESt";
 
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
@@ -624,7 +630,7 @@ export default function Home() {
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (Privatvermietung)`,
       value: formatCurrency(lastYear.compareWealth),
-      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(result.input.personalTaxRate * 100)} versteuert${result.input.comparePaysRealEstateTax ? ", inkl. Grunderwerbsteuer" : ", ohne Grunderwerbsteuer"}`,
+      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(result.input.personalTaxRate * 100)} versteuert${compareTaxCardDetail}`,
     },
   ];
 
@@ -1150,7 +1156,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Vergleichsvermögen (Privatvermietung)</dt>
                       <dd>{formatCurrency(row.compareWealth)}</dd>
-                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(result.input.personalTaxRate * 100)} versteuert{result.input.comparePaysRealEstateTax ? `, mit ${formatCurrency(result.privateRealEstateTax)} GrESt` : ", ohne GrESt"}</small>
+                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(result.input.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
                     </div>
                   </dl>
                 </div>

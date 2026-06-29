@@ -131,6 +131,11 @@ const RELATIONSHIP_OPTIONS = [
 
 const DEFAULT_RELATIONSHIP_ID = RELATIONSHIP_OPTIONS[0].id;
 
+// Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG): fiktive Erbschaft alle 30 Jahre
+const ERBERSATZ_CYCLE_YEARS = 30;
+const ERBERSATZ_CHILDREN = 2;
+const ERBERSATZ_CHILD_ALLOWANCE = 400_000; // Freibetrag je Kind, Steuerklasse I
+const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerklasse I (Kinder)
 
 const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },
@@ -261,12 +266,13 @@ function getRelationshipOption(relationshipId) {
   );
 }
 
-function createProjectionInput(validatedInput, relationship, surplusToRepayment) {
+function createProjectionInput(validatedInput, relationship, surplusToRepayment, erbersatzsteuerSpread) {
   return {
     ...validatedInput,
     giftTaxRate: relationship.giftTaxRate,
     giftTaxAllowance: relationship.giftTaxAllowance,
     surplusToRepayment,
+    erbersatzsteuerSpread,
   };
 }
 
@@ -296,6 +302,10 @@ function calculateProjection(input) {
   let remainingDepreciableBuildingValue = depreciableBuildingBase;
   let cumulativePersonNetCash = 0;
 
+  // Erbersatzsteuer-Tracking (§ 1 Abs. 1 Nr. 4 ErbStG)
+  let erbsRemainingLiability = 0;
+  let erbsCurrentInstallment = 0;
+
   // Vergleichsszenario: Privatvermietung ohne Stiftung
   // Kein Schenkungssteuerabzug, Mieteinnahmen zum persönlichen Steuersatz besteuert,
   // kein Darlehen, keine Verwaltungskosten
@@ -317,6 +327,10 @@ function calculateProjection(input) {
       buildingBookValue: buildingBookValue0,
       totalAssets: foundationCash + buildingBookValue0,
       equity: foundationCash + buildingBookValue0 - remainingLoan,
+      // Erbersatzsteuer
+      erbsTriggeredAmount: 0,
+      erbsInstallmentPaid: 0,
+      erbsRemainingLiability: 0,
       // Vergleichsvermögen Privatvermietung Jahr 0
       compareWealth: privateCash + propertyValue,
     },
@@ -385,12 +399,39 @@ function calculateProjection(input) {
     const buildingDepreciableValue = remainingDepreciableBuildingValue;
     const buildingBookValue = buildingDepreciableValue + landBookBase;
 
+    // Erbersatzsteuer: Jahresrate auszahlen (aus Vorjahres-Zyklus)
+    let erbsTriggeredAmount = 0;
+    let erbsInstallmentPaid = 0;
+    if (input.erbersatzsteuerSpread && erbsRemainingLiability > 0) {
+      erbsInstallmentPaid = Math.min(erbsCurrentInstallment, erbsRemainingLiability);
+      foundationCash -= erbsInstallmentPaid;
+      erbsRemainingLiability -= erbsInstallmentPaid;
+    }
+
+    // Erbersatzsteuer: Auslösung alle 30 Jahre
+    if (year % ERBERSATZ_CYCLE_YEARS === 0) {
+      const netWealthForErbs = foundationCash + propertyValue - remainingLoan;
+      const perChildTaxable = Math.max(
+        0,
+        netWealthForErbs / ERBERSATZ_CHILDREN - ERBERSATZ_CHILD_ALLOWANCE,
+      );
+      erbsTriggeredAmount = ERBERSATZ_CHILDREN * perChildTaxable * ERBERSATZ_TAX_RATE;
+      if (!input.erbersatzsteuerSpread) {
+        // Sofortzahlung
+        foundationCash -= erbsTriggeredAmount;
+      } else {
+        // Ratenzahlung über 30 Jahre
+        erbsRemainingLiability += erbsTriggeredAmount;
+        erbsCurrentInstallment = erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS;
+      }
+    }
+
     rows.push({
       year,
       foundationCash,
       foundationCashFlow,
       taxableResult,
-      foundationWealth: foundationCash + propertyValue - remainingLoan,
+      foundationWealth: foundationCash + propertyValue - remainingLoan - erbsRemainingLiability,
       remainingLoan,
       personNetCashFlow: lenderNetCashFlow,
       personAssetPosition: remainingLoan + cumulativePersonNetCash,
@@ -413,7 +454,11 @@ function calculateProjection(input) {
       buildingDepreciableValue,
       buildingBookValue,
       totalAssets: foundationCash + buildingBookValue,
-      equity: foundationCash + buildingBookValue - remainingLoan,
+      equity: foundationCash + buildingBookValue - remainingLoan - erbsRemainingLiability,
+      // Erbersatzsteuer
+      erbsTriggeredAmount,
+      erbsInstallmentPaid,
+      erbsRemainingLiability,
       // Vergleichsvermögen Privatvermietung
       compareWealth: privateCash + propertyValue,
     });
@@ -441,6 +486,7 @@ const DEFAULT_RESULT = calculateProjection({
     validateFormValues(DEFAULT_FORM_VALUES).input,
     getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
     false,
+    true,
   ),
 });
 
@@ -464,10 +510,11 @@ function ServiceWorkerRegistration() {
 }
 
 export default function Home() {
-  const [{ formValues, relationshipId, surplusToRepayment, bundesland, result }, setState] = useState({
+  const [{ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, result }, setState] = useState({
     formValues: DEFAULT_FORM_VALUES,
     relationshipId: DEFAULT_RELATIONSHIP_ID,
     surplusToRepayment: false,
+    erbersatzsteuerSpread: true,
     bundesland: null,
     result: DEFAULT_RESULT,
   });
@@ -481,6 +528,7 @@ export default function Home() {
       const nextFormValues = { ...DEFAULT_FORM_VALUES, ...parsed.formValues };
       const nextRelationshipId = parsed.relationshipId ?? DEFAULT_RELATIONSHIP_ID;
       const nextSurplusToRepayment = parsed.surplusToRepayment ?? false;
+      const nextErbersatzsteuerSpread = parsed.erbersatzsteuerSpread ?? true;
       const nextBundesland = parsed.bundesland ?? null;
       const nextValidation = validateFormValues(nextFormValues);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
@@ -489,6 +537,7 @@ export default function Home() {
         formValues: nextFormValues,
         relationshipId: nextRelationship.id,
         surplusToRepayment: nextSurplusToRepayment,
+        erbersatzsteuerSpread: nextErbersatzsteuerSpread,
         bundesland: nextBundesland,
         result: nextValidation.input
           ? calculateProjection(
@@ -496,6 +545,7 @@ export default function Home() {
                 nextValidation.input,
                 nextRelationship,
                 nextSurplusToRepayment,
+                nextErbersatzsteuerSpread,
               ),
             )
           : DEFAULT_RESULT,
@@ -511,14 +561,14 @@ export default function Home() {
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ formValues, relationshipId, surplusToRepayment, bundesland }),
+          JSON.stringify({ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland }),
         );
       } catch {
         // ignore storage errors
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [formValues, relationshipId, surplusToRepayment, bundesland]);
+  }, [formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
   const hasInvalidFields = validation.invalidIds.length > 0;
@@ -727,6 +777,7 @@ export default function Home() {
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
+                currentState.erbersatzsteuerSpread,
               ),
             )
           : currentState.result,
@@ -747,6 +798,7 @@ export default function Home() {
                 nextValidation.input,
                 nextRelationship,
                 currentState.surplusToRepayment,
+                currentState.erbersatzsteuerSpread,
               ),
             )
           : currentState.result,
@@ -765,6 +817,27 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
+                checked,
+                currentState.erbersatzsteuerSpread,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleErbersatzsteuerSpreadToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(currentState.formValues);
+      return {
+        ...currentState,
+        erbersatzsteuerSpread: checked,
+        result: nextValidation.input
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
                 checked,
               ),
             )
@@ -790,6 +863,7 @@ export default function Home() {
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
+                currentState.erbersatzsteuerSpread,
               ),
             )
           : currentState.result,
@@ -911,10 +985,26 @@ export default function Home() {
               Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
             </label>
           </div>
+          <div className={styles.checkboxRow}>
+            <input
+              id="erbersatzsteuerSpread"
+              type="checkbox"
+              checked={erbersatzsteuerSpread}
+              onChange={(event) => handleErbersatzsteuerSpreadToggle(event.target.checked)}
+              className={styles.checkbox}
+            />
+            <label htmlFor="erbersatzsteuerSpread" className={styles.checkboxLabel}>
+              Erbersatzsteuer auf 30 Jahresraten verteilen (§ 24 ErbStG)
+            </label>
+          </div>
           <p className={styles.hint}>
             Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom
             ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige
-            Restschuld an.
+            Restschuld an. Die Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle
+            30 Jahre auf Basis des Nettovermögens berechnet: 2 fiktive Kinder
+            (Freibetrag je {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, vereinfachter
+            Pauschalsatz {formatPercent(ERBERSATZ_TAX_RATE * 100)}). Ratenzahlung:
+            30 gleiche Jahresraten an das Finanzamt (§ 24 ErbStG).
           </p>
         </section>
 
@@ -1046,8 +1136,26 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Stiftung: Nettovermögen</dt>
                       <dd>{formatCurrency(row.foundationWealth)}</dd>
-                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen)</small>
+                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
                     </div>
+                    {row.erbsTriggeredAmount > 0 && (
+                      <div className={styles.dataItem}>
+                        <dt>Erbersatzsteuer (fällig, § 1 Abs. 1 Nr. 4 ErbStG)</dt>
+                        <dd className={styles.negative}>{formatCurrency(row.erbsTriggeredAmount)}</dd>
+                        <small className={styles.formula}>
+                          {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
+                          {result.input.erbersatzsteuerSpread
+                            ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
+                            : " — Sofortzahlung"}
+                        </small>
+                      </div>
+                    )}
+                    {row.erbsInstallmentPaid > 0 && (
+                      <div className={styles.dataItem}>
+                        <dt>Erbersatzsteuer: Jahresrate (Zahlung an Finanzamt)</dt>
+                        <dd className={styles.negative}>{formatCurrency(row.erbsInstallmentPaid)}</dd>
+                      </div>
+                    )}
                     <div className={styles.dataItem}>
                       <dt>Restdarlehen</dt>
                       <dd>{formatCurrency(row.remainingLoan)}</dd>
@@ -1166,12 +1274,19 @@ export default function Home() {
                       <dt>Darlehen</dt>
                       <dd>{formatCurrency(row.remainingLoan)}</dd>
                     </div>
+                    {row.erbsRemainingLiability > 0 && (
+                      <div className={styles.dataItem}>
+                        <dt>Erbersatzsteuer-Verbindlichkeit</dt>
+                        <dd className={styles.negative}>{formatCurrency(row.erbsRemainingLiability)}</dd>
+                        <small className={styles.formula}>Verbleibende Steuerschuld gegenüber dem Finanzamt (§ 24 ErbStG)</small>
+                      </div>
+                    )}
                     <div className={styles.dataItem}>
                       <dt>Eigenkapital</dt>
                       <dd className={row.equity < 0 ? styles.negative : styles.positive}>
                         {formatCurrency(row.equity)}
                       </dd>
-                      <small className={styles.formula}>{formatCurrency(row.totalAssets)} (Bilanzsumme) − {formatCurrency(row.remainingLoan)} (Darlehen)</small>
+                      <small className={styles.formula}>{formatCurrency(row.totalAssets)} (Bilanzsumme) − {formatCurrency(row.remainingLoan)} (Darlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer)` : ""}</small>
                     </div>
                   </dl>
                 </div>
@@ -1182,7 +1297,13 @@ export default function Home() {
             Das Nettovermögen der Stiftung nutzt den Immobilienwert aus Gebäude +
             Grundstück. Die AfA wirkt nur auf das steuerliche Ergebnis. Die
             Vermögensposition der Person setzt sich aus Restforderung und bereits
-            zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen.
+            zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen. Die
+            Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle 30 Jahre auf
+            Grundlage des Nettovermögens (2 fiktive Kinder, Freibetrag je{" "}
+            {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, Pauschalsatz{" "}
+            {formatPercent(ERBERSATZ_TAX_RATE * 100)}) berechnet und mindert das
+            Eigenkapital. Bei Ratenzahlung (§ 24 ErbStG) wird die Verbindlichkeit
+            als Fremdkapital ausgewiesen.
           </p>
         </section>
       </main>

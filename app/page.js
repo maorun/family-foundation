@@ -304,7 +304,14 @@ function getPersonalTaxRateForYear(personalTaxSteps, year) {
   return personalTaxSteps[0].rate;
 }
 
-function createProjectionInput(validatedInput, relationship, surplusToRepayment, personalTaxSteps, erbersatzsteuerSpread) {
+function createProjectionInput(
+  validatedInput,
+  relationship,
+  surplusToRepayment,
+  personalTaxSteps,
+  erbersatzsteuerSpread,
+  comparePaysRealEstateTax,
+) {
   return {
     ...validatedInput,
     giftTaxRate: relationship.giftTaxRate,
@@ -312,6 +319,7 @@ function createProjectionInput(validatedInput, relationship, surplusToRepayment,
     surplusToRepayment,
     personalTaxSteps,
     erbersatzsteuerSpread,
+    comparePaysRealEstateTax,
   };
 }
 
@@ -332,6 +340,10 @@ function calculateProjection(input) {
   const depreciableBuildingBase = input.buildingValue + realEstateTaxBuildingPortion;
   // Buchwert des Grundstücks inkl. GrESt-Anteil (nicht abschreibungsfähig)
   const landBookBase = input.landValue + realEstateTaxLandPortion;
+  const privateRealEstateTax = input.comparePaysRealEstateTax ? realEstateTax : 0;
+  const privateDepreciableBuildingBase =
+    input.buildingValue +
+    (input.comparePaysRealEstateTax ? realEstateTaxBuildingPortion : 0);
 
   const initialCash =
     input.initialCapital - giftTax + input.loanAmount - propertyValue - realEstateTax;
@@ -348,8 +360,9 @@ function calculateProjection(input) {
   // Vergleichsszenario: Privatvermietung ohne Stiftung
   // Kein Schenkungssteuerabzug, Mieteinnahmen zum persönlichen Steuersatz besteuert,
   // kein Darlehen, keine Verwaltungskosten
-  let privateCash = input.initialCapital + input.loanAmount - propertyValue - realEstateTax;
-  let privateRemainingDepreciableBuilding = depreciableBuildingBase;
+  let privateCash =
+    input.initialCapital + input.loanAmount - propertyValue - privateRealEstateTax;
+  let privateRemainingDepreciableBuilding = privateDepreciableBuildingBase;
 
   const buildingBookValue0 = depreciableBuildingBase + landBookBase;
 
@@ -427,7 +440,7 @@ function calculateProjection(input) {
     // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
     const privateDepreciation = Math.min(
       privateRemainingDepreciableBuilding,
-      depreciableBuildingBase * input.depreciationRate,
+      privateDepreciableBuildingBase * input.depreciationRate,
     );
     const privateTaxableRentalIncome = annualRent - privateDepreciation;
     const privateIncomeTax = privateTaxableRentalIncome * yearPersonalTaxRate;
@@ -516,6 +529,8 @@ function calculateProjection(input) {
     realEstateTaxBuildingPortion,
     realEstateTaxLandPortion,
     depreciableBuildingBase,
+    privateRealEstateTax,
+    privateDepreciableBuildingBase,
     propertyValue,
     initialCash,
     annualDepreciationBase: depreciableBuildingBase * input.depreciationRate,
@@ -530,6 +545,7 @@ const DEFAULT_RESULT = calculateProjection({
     false,
     validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS).parsedSteps,
     true,
+    false,
   ),
 });
 
@@ -553,11 +569,24 @@ function ServiceWorkerRegistration() {
 }
 
 export default function Home() {
-  const [{ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, personalTaxSteps, result }, setState] = useState({
+  const [
+    {
+      formValues,
+      relationshipId,
+      surplusToRepayment,
+      erbersatzsteuerSpread,
+      comparePaysRealEstateTax,
+      bundesland,
+      personalTaxSteps,
+      result,
+    },
+    setState,
+  ] = useState({
     formValues: DEFAULT_FORM_VALUES,
     relationshipId: DEFAULT_RELATIONSHIP_ID,
     surplusToRepayment: false,
     erbersatzsteuerSpread: true,
+    comparePaysRealEstateTax: false,
     bundesland: null,
     personalTaxSteps: DEFAULT_PERSONAL_TAX_STEPS,
     result: DEFAULT_RESULT,
@@ -573,6 +602,7 @@ export default function Home() {
       const nextRelationshipId = parsed.relationshipId ?? DEFAULT_RELATIONSHIP_ID;
       const nextSurplusToRepayment = parsed.surplusToRepayment ?? false;
       const nextErbersatzsteuerSpread = parsed.erbersatzsteuerSpread ?? true;
+      const nextComparePaysRealEstateTax = parsed.comparePaysRealEstateTax ?? false;
       const nextBundesland = parsed.bundesland ?? null;
       const nextPersonalTaxSteps = parsed.personalTaxSteps ?? DEFAULT_PERSONAL_TAX_STEPS;
       const nextValidation = validateFormValues(nextFormValues);
@@ -584,6 +614,7 @@ export default function Home() {
         relationshipId: nextRelationship.id,
         surplusToRepayment: nextSurplusToRepayment,
         erbersatzsteuerSpread: nextErbersatzsteuerSpread,
+        comparePaysRealEstateTax: nextComparePaysRealEstateTax,
         bundesland: nextBundesland,
         personalTaxSteps: nextPersonalTaxSteps,
         result: nextValidation.input && nextTaxValidation.parsedSteps
@@ -594,6 +625,7 @@ export default function Home() {
                 nextSurplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 nextErbersatzsteuerSpread,
+                nextComparePaysRealEstateTax,
               ),
             )
           : DEFAULT_RESULT,
@@ -609,14 +641,30 @@ export default function Home() {
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, personalTaxSteps }),
+          JSON.stringify({
+            formValues,
+            relationshipId,
+            surplusToRepayment,
+            erbersatzsteuerSpread,
+            comparePaysRealEstateTax,
+            bundesland,
+            personalTaxSteps,
+          }),
         );
       } catch {
         // ignore storage errors
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [formValues, relationshipId, surplusToRepayment, erbersatzsteuerSpread, bundesland, personalTaxSteps]);
+  }, [
+    formValues,
+    relationshipId,
+    surplusToRepayment,
+    erbersatzsteuerSpread,
+    comparePaysRealEstateTax,
+    bundesland,
+    personalTaxSteps,
+  ]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
   const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
@@ -626,6 +674,12 @@ export default function Home() {
     () => getRelationshipOption(relationshipId),
     [relationshipId],
   );
+  const compareTaxCardDetail = result.input.comparePaysRealEstateTax
+    ? ", inkl. Grunderwerbsteuer"
+    : ", ohne Grunderwerbsteuer";
+  const compareTaxFormulaDetail = result.input.comparePaysRealEstateTax
+    ? `, mit ${formatCurrency(result.privateRealEstateTax)} GrESt`
+    : ", ohne GrESt";
 
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
@@ -684,7 +738,7 @@ export default function Home() {
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (Privatvermietung)`,
       value: formatCurrency(lastYear.compareWealth),
-      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert`,
+      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}`,
     },
   ];
 
@@ -830,6 +884,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
+                currentState.comparePaysRealEstateTax,
               ),
             )
           : currentState.result,
@@ -853,6 +908,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
+                currentState.comparePaysRealEstateTax,
               ),
             )
           : currentState.result,
@@ -875,6 +931,30 @@ export default function Home() {
                 checked,
                 nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
+                currentState.comparePaysRealEstateTax,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleCompareRealEstateTaxToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(currentState.formValues);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        comparePaysRealEstateTax: checked,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.erbersatzsteuerSpread,
+                checked,
               ),
             )
           : currentState.result,
@@ -897,6 +977,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 checked,
+                currentState.comparePaysRealEstateTax,
               ),
             )
           : currentState.result,
@@ -924,6 +1005,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
+                currentState.comparePaysRealEstateTax,
               ),
             )
           : currentState.result,
@@ -949,6 +1031,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
+                currentState.comparePaysRealEstateTax,
               ),
             )
           : currentState.result,
@@ -975,6 +1058,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.erbersatzsteuerSpread,
+                currentState.comparePaysRealEstateTax,
               ),
             )
           : currentState.result,
@@ -1181,6 +1265,18 @@ export default function Home() {
           </div>
           <div className={styles.checkboxRow}>
             <input
+              id="comparePaysRealEstateTax"
+              type="checkbox"
+              checked={comparePaysRealEstateTax}
+              onChange={(event) => handleCompareRealEstateTaxToggle(event.target.checked)}
+              className={styles.checkbox}
+            />
+            <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
+              Vergleichsvermögen zahlt Grunderwerbsteuer
+            </label>
+          </div>
+          <div className={styles.checkboxRow}>
+            <input
               id="erbersatzsteuerSpread"
               type="checkbox"
               checked={erbersatzsteuerSpread}
@@ -1376,7 +1472,7 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Vergleichsvermögen (Privatvermietung)</dt>
                       <dd>{formatCurrency(row.compareWealth)}</dd>
-                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert</small>
+                      <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
                     </div>
                   </dl>
                 </div>

@@ -80,7 +80,7 @@ const FIELD_DEFINITIONS = [
     id: "projectionYears",
     label: "Betrachtungszeitraum (Jahre)",
     min: 1,
-    max: 50,
+    max: 200,
     step: "1",
     integer: true,
     defaultValue: 10,

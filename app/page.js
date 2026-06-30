@@ -77,6 +77,29 @@ const FIELD_DEFINITIONS = [
     defaultValue: 2,
   },
   {
+    id: "etfReturnRate",
+    label: "ETF-Rendite p.a. (%)",
+    min: 0,
+    step: "0.1",
+    defaultValue: 5,
+  },
+  {
+    id: "foundationEtfTaxRate",
+    label: "ETF-Steuersatz Stiftung (%)",
+    min: 0,
+    max: 100,
+    step: "0.1",
+    defaultValue: 15,
+  },
+  {
+    id: "privateEtfTaxRate",
+    label: "ETF-Steuersatz Privat/Vergleich (%)",
+    min: 0,
+    max: 100,
+    step: "0.1",
+    defaultValue: 26.375,
+  },
+  {
     id: "projectionYears",
     label: "Betrachtungszeitraum (Jahre)",
     min: 1,
@@ -130,6 +153,8 @@ const ERBERSATZ_CYCLE_YEARS = 30;
 const ERBERSATZ_CHILDREN = 2;
 const ERBERSATZ_CHILD_ALLOWANCE = 400_000; // Freibetrag je Kind, Steuerklasse I
 const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerklasse I (Kinder)
+const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0.8; // 80 % gem. § 20 InvStG für körperschaftsteuerpflichtige Anleger (Aktienfonds)
+const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0.3; // 30 % gem. § 20 InvStG für private Anleger (Aktienfonds)
 
 const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },
@@ -247,6 +272,11 @@ function validateFormValues(formValues) {
       realEstateTaxRate: parsedValues.realEstateTaxRate / 100,
       monthlyRent: parsedValues.monthlyRent,
       depreciationRate: parsedValues.depreciationRate / 100,
+      etfReturnRate: parsedValues.etfReturnRate / 100,
+      foundationEtfTaxRate: parsedValues.foundationEtfTaxRate / 100,
+      foundationEtfPartialExemptionRate: FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE,
+      privateEtfTaxRate: parsedValues.privateEtfTaxRate / 100,
+      privateEtfPartialExemptionRate: PRIVATE_ETF_PARTIAL_EXEMPTION_RATE,
       projectionYears: parsedValues.projectionYears,
     },
   };
@@ -321,6 +351,65 @@ function createProjectionInput(
   };
 }
 
+function computeEtfSaleTaxData(
+  balanceAfterTax,
+  contributionsAfterInvestment,
+  taxedGainsAfterYear,
+  taxRate,
+  partialExemptionRate,
+) {
+  const taxableRatio = Math.max(0, 1 - partialExemptionRate);
+  const taxableSaleGain = Math.max(
+    0,
+    (balanceAfterTax - contributionsAfterInvestment) * taxableRatio - taxedGainsAfterYear,
+  );
+  const saleTax = taxableSaleGain * taxRate;
+  const etfLiquidationValue = balanceAfterTax - saleTax;
+
+  return { taxableSaleGain, saleTax, etfLiquidationValue };
+}
+
+function applyEtfYear({
+  cash,
+  etfBalance,
+  etfContributions,
+  etfTaxedGains,
+  returnRate,
+  taxRate,
+  partialExemptionRate,
+}) {
+  const taxableRatio = Math.max(0, 1 - partialExemptionRate);
+  const etfInvestment = Math.max(0, cash);
+  const cashAfterInvestment = cash - etfInvestment;
+  const etfBalanceAfterInvestment = etfBalance + etfInvestment;
+  const etfContributionsAfterInvestment = etfContributions + etfInvestment;
+  const grossEtfReturn = etfBalanceAfterInvestment * returnRate;
+  const taxableVorabGain = grossEtfReturn * taxableRatio;
+  const vorabTax = taxableVorabGain * taxRate;
+  const etfBalanceAfterTax = etfBalanceAfterInvestment + grossEtfReturn - vorabTax;
+  const etfTaxedGainsAfterYear = etfTaxedGains + taxableVorabGain;
+  const { taxableSaleGain, saleTax, etfLiquidationValue } = computeEtfSaleTaxData(
+    etfBalanceAfterTax,
+    etfContributionsAfterInvestment,
+    etfTaxedGainsAfterYear,
+    taxRate,
+    partialExemptionRate,
+  );
+
+  return {
+    cashAfterInvestment,
+    etfBalanceAfterTax,
+    etfContributionsAfterInvestment,
+    etfTaxedGainsAfterYear,
+    etfInvestment,
+    grossEtfReturn,
+    vorabTax,
+    taxableSaleGain,
+    saleTax,
+    etfLiquidationValue,
+  };
+}
+
 function calculateProjection(input) {
   const propertyValue = input.buildingValue + input.landValue;
   const annualRent = input.monthlyRent * 12;
@@ -347,9 +436,15 @@ function calculateProjection(input) {
     input.initialCapital - giftTax + input.loanAmount - propertyValue - realEstateTax;
 
   let foundationCash = initialCash;
+  let foundationEtfBalance = 0;
+  let foundationEtfContributions = 0;
+  let foundationEtfTaxedGains = 0;
   let remainingLoan = input.loanAmount;
   let remainingDepreciableBuildingValue = depreciableBuildingBase;
-  let cumulativePersonNetCash = 0;
+  let personCash = 0;
+  let personEtfBalance = 0;
+  let personEtfContributions = 0;
+  let personEtfTaxedGains = 0;
 
   // Erbersatzsteuer-Tracking (§ 1 Abs. 1 Nr. 4 ErbStG)
   let erbsRemainingLiability = 0;
@@ -361,6 +456,9 @@ function calculateProjection(input) {
   // kein Darlehen, keine Verwaltungskosten
   let privateCash =
     input.initialCapital + input.loanAmount - propertyValue - privateRealEstateTax;
+  let compareEtfBalance = 0;
+  let compareEtfContributions = 0;
+  let compareEtfTaxedGains = 0;
   let privateRemainingDepreciableBuilding = privateDepreciableBuildingBase;
 
   const buildingBookValue0 = depreciableBuildingBase + landBookBase;
@@ -369,11 +467,20 @@ function calculateProjection(input) {
     {
       year: 0,
       foundationCash,
+      foundationEtfBalance,
+      foundationEtfLiquidationValue: 0,
+      foundationVorabTax: 0,
+      foundationEtfSaleTax: 0,
       taxableResult: -giftTax,
       foundationWealth: foundationCash + propertyValue - remainingLoan,
       remainingLoan,
       personNetCashFlow: 0,
       personAssetPosition: remainingLoan,
+      personCash,
+      personEtfBalance,
+      personEtfLiquidationValue: 0,
+      personVorabTax: 0,
+      personEtfSaleTax: 0,
       personalTaxRate: getPersonalTaxRateForYear(input.personalTaxSteps, 1),
       // Bilanz Jahr 0
       buildingBookValue: buildingBookValue0,
@@ -387,6 +494,10 @@ function calculateProjection(input) {
       erbsRemainingLiability: 0,
       // Vergleichsvermögen Privatvermietung Jahr 0
       compareWealth: privateCash + propertyValue,
+      compareEtfBalance,
+      compareEtfLiquidationValue: 0,
+      compareVorabTax: 0,
+      compareEtfSaleTax: 0,
     },
   ];
 
@@ -436,7 +547,7 @@ function calculateProjection(input) {
       0,
       remainingDepreciableBuildingValue - annualDepreciation,
     );
-    cumulativePersonNetCash += lenderNetCashFlow;
+    personCash += lenderNetCashFlow;
 
     // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
     const privateDepreciation = Math.min(
@@ -457,7 +568,15 @@ function calculateProjection(input) {
     // Erbersatzsteuer: Auslösung alle 30 Jahre (frühestens Jahr 30, nie Jahr 0)
     let erbsTriggeredAmount = 0;
     if (year > 0 && year % ERBERSATZ_CYCLE_YEARS === 0) {
-      const netWealthForErbs = foundationCash + propertyValue - remainingLoan;
+      const { etfLiquidationValue: foundationEtfLiquidationForErbs } = computeEtfSaleTaxData(
+        foundationEtfBalance,
+        foundationEtfContributions,
+        foundationEtfTaxedGains,
+        input.foundationEtfTaxRate,
+        input.foundationEtfPartialExemptionRate,
+      );
+      const netWealthForErbs =
+        foundationCash + foundationEtfLiquidationForErbs + propertyValue - remainingLoan;
       const perChildTaxable = Math.max(
         0,
         netWealthForErbs / ERBERSATZ_CHILDREN - ERBERSATZ_CHILD_ALLOWANCE,
@@ -484,16 +603,77 @@ function calculateProjection(input) {
     const erbsInstallmentShare =
       erbsCurrentCycleAmount > 0 ? erbsInstallmentPaid / erbsCurrentCycleAmount : 0;
 
+    const foundationEtf = applyEtfYear({
+      cash: foundationCash,
+      etfBalance: foundationEtfBalance,
+      etfContributions: foundationEtfContributions,
+      etfTaxedGains: foundationEtfTaxedGains,
+      returnRate: input.etfReturnRate,
+      taxRate: input.foundationEtfTaxRate,
+      partialExemptionRate: input.foundationEtfPartialExemptionRate,
+    });
+    foundationCash = foundationEtf.cashAfterInvestment;
+    foundationEtfBalance = foundationEtf.etfBalanceAfterTax;
+    foundationEtfContributions = foundationEtf.etfContributionsAfterInvestment;
+    foundationEtfTaxedGains = foundationEtf.etfTaxedGainsAfterYear;
+
+    const personEtf = applyEtfYear({
+      cash: personCash,
+      etfBalance: personEtfBalance,
+      etfContributions: personEtfContributions,
+      etfTaxedGains: personEtfTaxedGains,
+      returnRate: input.etfReturnRate,
+      taxRate: input.privateEtfTaxRate,
+      partialExemptionRate: input.privateEtfPartialExemptionRate,
+    });
+    personCash = personEtf.cashAfterInvestment;
+    personEtfBalance = personEtf.etfBalanceAfterTax;
+    personEtfContributions = personEtf.etfContributionsAfterInvestment;
+    personEtfTaxedGains = personEtf.etfTaxedGainsAfterYear;
+
+    const compareEtf = applyEtfYear({
+      cash: privateCash,
+      etfBalance: compareEtfBalance,
+      etfContributions: compareEtfContributions,
+      etfTaxedGains: compareEtfTaxedGains,
+      returnRate: input.etfReturnRate,
+      taxRate: input.privateEtfTaxRate,
+      partialExemptionRate: input.privateEtfPartialExemptionRate,
+    });
+    privateCash = compareEtf.cashAfterInvestment;
+    compareEtfBalance = compareEtf.etfBalanceAfterTax;
+    compareEtfContributions = compareEtf.etfContributionsAfterInvestment;
+    compareEtfTaxedGains = compareEtf.etfTaxedGainsAfterYear;
+
     rows.push({
       year,
       foundationCash,
+      foundationEtfBalance,
+      foundationEtfLiquidationValue: foundationEtf.etfLiquidationValue,
+      foundationEtfInvestment: foundationEtf.etfInvestment,
+      foundationEtfTaxableSaleGain: foundationEtf.taxableSaleGain,
+      foundationGrossEtfReturn: foundationEtf.grossEtfReturn,
+      foundationVorabTax: foundationEtf.vorabTax,
+      foundationEtfSaleTax: foundationEtf.saleTax,
       foundationCashFlow,
       taxableResult,
-      foundationWealth: foundationCash + propertyValue - remainingLoan - erbsRemainingLiability,
+      foundationWealth:
+        foundationCash +
+        foundationEtf.etfLiquidationValue +
+        propertyValue -
+        remainingLoan -
+        erbsRemainingLiability,
       remainingLoan,
       personNetCashFlow: lenderNetCashFlow,
-      personAssetPosition: remainingLoan + cumulativePersonNetCash,
-      cumulativePersonNetCash,
+      personAssetPosition: remainingLoan + personCash + personEtf.etfLiquidationValue,
+      personCash,
+      personEtfBalance,
+      personEtfLiquidationValue: personEtf.etfLiquidationValue,
+      personEtfInvestment: personEtf.etfInvestment,
+      personEtfTaxableSaleGain: personEtf.taxableSaleGain,
+      personGrossEtfReturn: personEtf.grossEtfReturn,
+      personVorabTax: personEtf.vorabTax,
+      personEtfSaleTax: personEtf.saleTax,
       // GuV Stiftung
       guvRent: annualRent,
       guvAdminCost: input.annualAdminCost,
@@ -512,8 +692,13 @@ function calculateProjection(input) {
       // Bilanz
       buildingDepreciableValue,
       buildingBookValue,
-      totalAssets: foundationCash + buildingBookValue,
-      equity: foundationCash + buildingBookValue - remainingLoan - erbsRemainingLiability,
+      totalAssets: foundationCash + foundationEtf.etfLiquidationValue + buildingBookValue,
+      equity:
+        foundationCash +
+        foundationEtf.etfLiquidationValue +
+        buildingBookValue -
+        remainingLoan -
+        erbsRemainingLiability,
       // Erbersatzsteuer
       erbsTriggeredAmount,
       erbsInstallmentShare,
@@ -521,7 +706,14 @@ function calculateProjection(input) {
       erbsInstallmentPaid,
       erbsRemainingLiability,
       // Vergleichsvermögen Privatvermietung
-      compareWealth: privateCash + propertyValue,
+      compareWealth: privateCash + compareEtf.etfLiquidationValue + propertyValue,
+      compareEtfBalance,
+      compareEtfLiquidationValue: compareEtf.etfLiquidationValue,
+      compareEtfInvestment: compareEtf.etfInvestment,
+      compareEtfTaxableSaleGain: compareEtf.taxableSaleGain,
+      compareGrossEtfReturn: compareEtf.grossEtfReturn,
+      compareVorabTax: compareEtf.vorabTax,
+      compareEtfSaleTax: compareEtf.saleTax,
     });
   }
 
@@ -752,12 +944,12 @@ export default function Home() {
     {
       title: `Person: Vermögensposition Jahr ${result.input.projectionYears}`,
       value: formatCurrency(lastYear.personAssetPosition),
-      detail: `Persönlicher Steuersatz ${formatPercent(lastYear.personalTaxRate * 100)}`,
+      detail: `Persönlicher Steuersatz ${formatPercent(lastYear.personalTaxRate * 100)}, ETF-Rendite ${formatPercent(result.input.etfReturnRate * 100)}, ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}, Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}`,
     },
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (Privatvermietung)`,
       value: formatCurrency(lastYear.compareWealth),
-      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}`,
+      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
     },
   ];
 
@@ -1471,7 +1663,7 @@ export default function Home() {
                         <div className={styles.dataItem}>
                           <dt>Nettovermögen</dt>
                           <dd>{formatCurrency(row.foundationWealth)}</dd>
-                          <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
+                          <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(row.foundationEtfLiquidationValue)} (ETF nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
                         </div>
                         {row.year > 0 && row.year % ERBERSATZ_CYCLE_YEARS === 0 && (
                           <div className={styles.dataItem}>
@@ -1480,7 +1672,7 @@ export default function Home() {
                               {formatCurrency(row.erbsTriggeredAmount)}
                             </dd>
                             <small className={styles.formula}>
-                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
+                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + row.foundationEtfLiquidationValue + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
                               {row.erbsTriggeredAmount > 0
                                 ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
                                 : " — kein steuerpflichtiger Betrag im aktuellen 30-Jahres-Zyklus"}
@@ -1526,7 +1718,7 @@ export default function Home() {
                         <div className={styles.dataItem}>
                           <dt>Vermögensposition</dt>
                           <dd>{formatCurrency(row.personAssetPosition)}</dd>
-                          {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} (Restdarlehen) + {formatCurrency(row.cumulativePersonNetCash)} (kum. Netto-Zuflüsse)</small>}
+                          {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} (Restdarlehen) + {formatCurrency(row.personCash)} (Kasse) + {formatCurrency(row.personEtfLiquidationValue)} (ETF nach Verkaufsteuer)</small>}
                         </div>
                       </dl>
                     </div>
@@ -1536,7 +1728,7 @@ export default function Home() {
                         <div className={styles.dataItem}>
                           <dt>Vergleichsvermögen</dt>
                           <dd>{formatCurrency(row.compareWealth)}</dd>
-                          <small className={styles.formula}>Kasse + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
+                          <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
                         </div>
                       </dl>
                     </div>
@@ -1618,13 +1810,29 @@ export default function Home() {
                       {row.year === 0 ? (
                         <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                       ) : (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}) − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       )}
                     </div>
                     <div className={styles.dataItem}>
+                      <dt>ETF-Bestand</dt>
+                      <dd>{formatCurrency(row.foundationEtfBalance)}</dd>
+                      {row.year > 0 && (
+                        <small className={styles.formula}>
+                          Vorjahresbestand + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + {formatCurrency(row.foundationGrossEtfReturn)} (Brutto-Rendite) − {formatCurrency(row.foundationVorabTax)} (Vorabpauschale)
+                        </small>
+                      )}
+                    </div>
+                    {row.year > 0 && (
+                      <div className={styles.dataItem}>
+                        <dt>ETF-Verkaufsteuer (wenn Verkauf in Jahr {row.year})</dt>
+                        <dd className={styles.negative}>{formatCurrency(row.foundationEtfSaleTax)}</dd>
+                        <small className={styles.formula}>max(0, ({formatCurrency(row.foundationEtfBalance)} − Einzahlungen) × (1 − {formatPercent(result.input.foundationEtfPartialExemptionRate * 100)}) − bereits vorab besteuerte Gewinne) × {formatPercent(result.input.foundationEtfTaxRate * 100)} = Steuer auf {formatCurrency(row.foundationEtfTaxableSaleGain)}</small>
+                      </div>
+                    )}
+                    <div className={styles.dataItem}>
                       <dt>Bilanzsumme</dt>
                       <dd>{formatCurrency(row.totalAssets)}</dd>
-                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(row.buildingBookValue)} (Immobilie)</small>
+                      <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(row.foundationEtfLiquidationValue)} (ETF nach Verkaufsteuer) + {formatCurrency(row.buildingBookValue)} (Immobilie)</small>
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Darlehen</dt>
@@ -1653,7 +1861,21 @@ export default function Home() {
             Das Nettovermögen der Stiftung nutzt den Immobilienwert aus Gebäude +
             Grundstück. Die AfA wirkt nur auf das steuerliche Ergebnis. Die
             Vermögensposition der Person setzt sich aus Restforderung und bereits
-            zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen. Die
+            zugeflossenen, nach Steuern verbleibenden Zahlungen zusammen. Positive
+            Liquidität wird jährlich in ETF-Anteile umgeschichtet (Rendite:
+            {" "}
+            {formatPercent(result.input.etfReturnRate * 100)}). Die Vorabpauschale
+            wird für ETF-Erträge jährlich mit getrennten Sätzen angesetzt
+            (Stiftung: {formatPercent(result.input.foundationEtfTaxRate * 100)},
+            Privat/Vergleich: {formatPercent(result.input.privateEtfTaxRate * 100)}).
+            Für die ETF-Steuerbasis gilt eine Teilfreistellung (Stiftung:
+            {" "}
+            {formatPercent(result.input.foundationEtfPartialExemptionRate * 100)},
+            Privat/Vergleich:
+            {" "}
+            {formatPercent(result.input.privateEtfPartialExemptionRate * 100)});
+            zusätzlich wird eine hypothetische Verkaufsteuer auf noch nicht über
+            Vorabpauschale besteuerte ETF-Gewinne berücksichtigt. Die
             Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle 30 Jahre auf
             Grundlage des Nettovermögens (2 fiktive Kinder, Freibetrag je{" "}
             {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, Pauschalsatz{" "}

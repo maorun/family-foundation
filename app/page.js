@@ -1473,10 +1473,12 @@ export default function Home() {
                           <dd>{formatCurrency(row.foundationWealth)}</dd>
                           <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
                         </div>
-                        {row.erbsTriggeredAmount > 0 && (
+                        {row.year > 0 && row.year % ERBERSATZ_CYCLE_YEARS === 0 && (
                           <div className={styles.dataItem}>
                             <dt>Erbersatzsteuer (fällig, § 1 Abs. 1 Nr. 4 ErbStG)</dt>
-                            <dd className={styles.negative}>{formatCurrency(row.erbsTriggeredAmount)}</dd>
+                            <dd className={row.erbsTriggeredAmount > 0 ? styles.negative : undefined}>
+                              {formatCurrency(row.erbsTriggeredAmount)}
+                            </dd>
                             <small className={styles.formula}>
                               {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
                               {` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`}

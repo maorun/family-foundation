@@ -452,7 +452,7 @@ function calculateProjection(input) {
       foundationWealth: foundationCash + propertyValue - remainingLoan,
       remainingLoan,
       personNetCashFlow: 0,
-      personAssetPosition: remainingLoan + personCash,
+      personAssetPosition: remainingLoan,
       personCash,
       personEtfBalance,
       personEtfLiquidationValue: 0,
@@ -552,7 +552,12 @@ function calculateProjection(input) {
 
     // Erbersatzsteuer: Auslösung alle 30 Jahre (frühestens Jahr 30, nie Jahr 0)
     if (year > 0 && year % ERBERSATZ_CYCLE_YEARS === 0) {
-      const netWealthForErbs = foundationCash + foundationEtfBalance + propertyValue - remainingLoan;
+      const foundationEtfLiquidationForErbs = foundationEtfBalance - Math.max(
+        0,
+        foundationEtfBalance - foundationEtfContributions - foundationEtfTaxedGains,
+      ) * input.foundationEtfTaxRate;
+      const netWealthForErbs =
+        foundationCash + foundationEtfLiquidationForErbs + propertyValue - remainingLoan;
       const perChildTaxable = Math.max(
         0,
         netWealthForErbs / ERBERSATZ_CHILDREN - ERBERSATZ_CHILD_ALLOWANCE,
@@ -1675,7 +1680,7 @@ export default function Home() {
                             <dt>Erbersatzsteuer (fällig, § 1 Abs. 1 Nr. 4 ErbStG)</dt>
                             <dd className={styles.negative}>{formatCurrency(row.erbsTriggeredAmount)}</dd>
                             <small className={styles.formula}>
-                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + row.foundationEtfBalance + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
+                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + row.foundationEtfLiquidationValue + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
                               {result.input.erbersatzsteuerSpread
                                 ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
                                 : " — Sofortzahlung"}

@@ -349,6 +349,17 @@ function createProjectionInput(
   };
 }
 
+function computeEtfSaleTaxData(balanceAfterTax, contributionsAfterInvestment, taxedGainsAfterYear, taxRate) {
+  const taxableSaleGain = Math.max(
+    0,
+    balanceAfterTax - contributionsAfterInvestment - taxedGainsAfterYear,
+  );
+  const saleTax = taxableSaleGain * taxRate;
+  const etfLiquidationValue = balanceAfterTax - saleTax;
+
+  return { taxableSaleGain, saleTax, etfLiquidationValue };
+}
+
 function applyEtfYear({
   cash,
   etfBalance,
@@ -362,16 +373,16 @@ function applyEtfYear({
   const etfBalanceAfterInvestment = etfBalance + etfInvestment;
   const etfContributionsAfterInvestment = etfContributions + etfInvestment;
   const grossEtfReturn = etfBalanceAfterInvestment * returnRate;
-  const taxableVorabGain = Math.max(0, grossEtfReturn);
+  const taxableVorabGain = grossEtfReturn;
   const vorabTax = taxableVorabGain * taxRate;
   const etfBalanceAfterTax = etfBalanceAfterInvestment + grossEtfReturn - vorabTax;
   const etfTaxedGainsAfterYear = etfTaxedGains + taxableVorabGain;
-  const taxableSaleGain = Math.max(
-    0,
-    etfBalanceAfterTax - etfContributionsAfterInvestment - etfTaxedGainsAfterYear,
+  const { taxableSaleGain, saleTax, etfLiquidationValue } = computeEtfSaleTaxData(
+    etfBalanceAfterTax,
+    etfContributionsAfterInvestment,
+    etfTaxedGainsAfterYear,
+    taxRate,
   );
-  const saleTax = taxableSaleGain * taxRate;
-  const etfLiquidationValue = etfBalanceAfterTax - saleTax;
 
   return {
     cashAfterInvestment,
@@ -418,7 +429,6 @@ function calculateProjection(input) {
   let foundationEtfTaxedGains = 0;
   let remainingLoan = input.loanAmount;
   let remainingDepreciableBuildingValue = depreciableBuildingBase;
-  let cumulativePersonNetCash = 0;
   let personCash = 0;
   let personEtfBalance = 0;
   let personEtfContributions = 0;
@@ -523,7 +533,6 @@ function calculateProjection(input) {
       remainingDepreciableBuildingValue - annualDepreciation,
     );
     personCash += lenderNetCashFlow;
-    cumulativePersonNetCash += lenderNetCashFlow;
 
     // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
     const privateDepreciation = Math.min(
@@ -552,10 +561,12 @@ function calculateProjection(input) {
 
     // Erbersatzsteuer: Auslösung alle 30 Jahre (frühestens Jahr 30, nie Jahr 0)
     if (year > 0 && year % ERBERSATZ_CYCLE_YEARS === 0) {
-      const foundationEtfLiquidationForErbs = foundationEtfBalance - Math.max(
-        0,
-        foundationEtfBalance - foundationEtfContributions - foundationEtfTaxedGains,
-      ) * input.foundationEtfTaxRate;
+      const { etfLiquidationValue: foundationEtfLiquidationForErbs } = computeEtfSaleTaxData(
+        foundationEtfBalance,
+        foundationEtfContributions,
+        foundationEtfTaxedGains,
+        input.foundationEtfTaxRate,
+      );
       const netWealthForErbs =
         foundationCash + foundationEtfLiquidationForErbs + propertyValue - remainingLoan;
       const perChildTaxable = Math.max(
@@ -618,6 +629,8 @@ function calculateProjection(input) {
       foundationEtfBalance,
       foundationEtfLiquidationValue: foundationEtf.etfLiquidationValue,
       foundationEtfInvestment: foundationEtf.etfInvestment,
+      foundationEtfTaxableSaleGain: foundationEtf.taxableSaleGain,
+      foundationGrossEtfReturn: foundationEtf.grossEtfReturn,
       foundationVorabTax: foundationEtf.vorabTax,
       foundationEtfSaleTax: foundationEtf.saleTax,
       foundationCashFlow,
@@ -635,9 +648,10 @@ function calculateProjection(input) {
       personEtfBalance,
       personEtfLiquidationValue: personEtf.etfLiquidationValue,
       personEtfInvestment: personEtf.etfInvestment,
+      personEtfTaxableSaleGain: personEtf.taxableSaleGain,
+      personGrossEtfReturn: personEtf.grossEtfReturn,
       personVorabTax: personEtf.vorabTax,
       personEtfSaleTax: personEtf.saleTax,
-      cumulativePersonNetCash,
       // GuV Stiftung
       guvRent: annualRent,
       guvAdminCost: input.annualAdminCost,
@@ -672,6 +686,8 @@ function calculateProjection(input) {
       compareEtfBalance,
       compareEtfLiquidationValue: compareEtf.etfLiquidationValue,
       compareEtfInvestment: compareEtf.etfInvestment,
+      compareEtfTaxableSaleGain: compareEtf.taxableSaleGain,
+      compareGrossEtfReturn: compareEtf.grossEtfReturn,
       compareVorabTax: compareEtf.vorabTax,
       compareEtfSaleTax: compareEtf.saleTax,
     });
@@ -1819,7 +1835,7 @@ export default function Home() {
                       <dd>{formatCurrency(row.foundationEtfBalance)}</dd>
                       {row.year > 0 && (
                         <small className={styles.formula}>
-                          Vorjahresbestand + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + Rendite ({formatPercent(result.input.etfReturnRate * 100)}) − Vorabpauschale ({formatCurrency(row.foundationVorabTax)})
+                          Vorjahresbestand + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + {formatCurrency(row.foundationGrossEtfReturn)} (Brutto-Rendite) − {formatCurrency(row.foundationVorabTax)} (Vorabpauschale)
                         </small>
                       )}
                     </div>
@@ -1827,7 +1843,7 @@ export default function Home() {
                       <div className={styles.dataItem}>
                         <dt>ETF-Verkaufsteuer (wenn Verkauf in Jahr {row.year})</dt>
                         <dd className={styles.negative}>{formatCurrency(row.foundationEtfSaleTax)}</dd>
-                        <small className={styles.formula}>Verkaufsteuer auf noch nicht über Vorabpauschale besteuerte ETF-Gewinne</small>
+                        <small className={styles.formula}>max(0, {formatCurrency(row.foundationEtfBalance)} − Einzahlungen − bereits vorab besteuerte Gewinne) × {formatPercent(result.input.foundationEtfTaxRate * 100)} = Steuer auf {formatCurrency(row.foundationEtfTaxableSaleGain)}</small>
                       </div>
                     )}
                     <div className={styles.dataItem}>

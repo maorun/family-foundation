@@ -578,6 +578,7 @@ export default function Home() {
       comparePaysRealEstateTax,
       bundesland,
       personalTaxSteps,
+      selectedOverviewYear,
       result,
     },
     setState,
@@ -589,6 +590,7 @@ export default function Home() {
     comparePaysRealEstateTax: false,
     bundesland: null,
     personalTaxSteps: DEFAULT_PERSONAL_TAX_STEPS,
+    selectedOverviewYear: "all",
     result: DEFAULT_RESULT,
   });
 
@@ -605,6 +607,7 @@ export default function Home() {
       const nextComparePaysRealEstateTax = parsed.comparePaysRealEstateTax ?? false;
       const nextBundesland = parsed.bundesland ?? null;
       const nextPersonalTaxSteps = parsed.personalTaxSteps ?? DEFAULT_PERSONAL_TAX_STEPS;
+      const nextSelectedOverviewYear = parsed.selectedOverviewYear ?? "all";
       const nextValidation = validateFormValues(nextFormValues);
       const nextTaxValidation = validatePersonalTaxSteps(nextPersonalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
@@ -617,6 +620,7 @@ export default function Home() {
         comparePaysRealEstateTax: nextComparePaysRealEstateTax,
         bundesland: nextBundesland,
         personalTaxSteps: nextPersonalTaxSteps,
+        selectedOverviewYear: nextSelectedOverviewYear,
         result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
@@ -649,6 +653,7 @@ export default function Home() {
             comparePaysRealEstateTax,
             bundesland,
             personalTaxSteps,
+            selectedOverviewYear,
           }),
         );
       } catch {
@@ -664,6 +669,7 @@ export default function Home() {
     comparePaysRealEstateTax,
     bundesland,
     personalTaxSteps,
+    selectedOverviewYear,
   ]);
 
   const validation = useMemo(() => validateFormValues(formValues), [formValues]);
@@ -680,6 +686,20 @@ export default function Home() {
   const compareTaxFormulaDetail = result.input.comparePaysRealEstateTax
     ? `, mit ${formatCurrency(result.privateRealEstateTax)} GrESt`
     : ", ohne GrESt";
+  const overviewYearOptions = useMemo(
+    () => result.rows.map((row) => row.year),
+    [result.rows],
+  );
+  const normalizedOverviewYear = selectedOverviewYear !== "all"
+    && !overviewYearOptions.includes(Number(selectedOverviewYear))
+    ? "all"
+    : selectedOverviewYear;
+  const visibleOverviewRows = useMemo(
+    () => (normalizedOverviewYear === "all"
+      ? result.rows
+      : result.rows.filter((row) => row.year === Number(normalizedOverviewYear))),
+    [normalizedOverviewYear, result.rows],
+  );
 
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
@@ -1102,6 +1122,13 @@ export default function Home() {
     });
   }
 
+  function handleOverviewYearChange(value) {
+    setState((currentState) => ({
+      ...currentState,
+      selectedOverviewYear: value,
+    }));
+  }
+
   return (
     <>
       <ServiceWorkerRegistration />
@@ -1426,8 +1453,26 @@ export default function Home() {
 
         <section className={styles.panel}>
           <h2>Jahresübersicht</h2>
+          <div className={styles.yearFilterRow}>
+            <label htmlFor="overviewYear" className={styles.fieldLabel}>
+              Jahr filtern
+            </label>
+            <select
+              id="overviewYear"
+              value={normalizedOverviewYear}
+              onChange={(event) => handleOverviewYearChange(event.target.value)}
+              className={styles.fieldInput}
+            >
+              <option value="all">Alle Jahre</option>
+              {overviewYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  Jahr {year}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className={styles.yearList}>
-            {result.rows.map((row) => (
+            {visibleOverviewRows.map((row) => (
               <div key={row.year} className={styles.yearCard}>
                 <h3 className={styles.yearCardTitle}>Jahr {row.year}</h3>
 

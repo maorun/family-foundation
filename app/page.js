@@ -1481,7 +1481,9 @@ export default function Home() {
                             </dd>
                             <small className={styles.formula}>
                               {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
-                              {` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`}
+                              {row.erbsTriggeredAmount > 0
+                                ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
+                                : " — kein steuerpflichtiger Betrag im aktuellen 30-Jahres-Zyklus"}
                             </small>
                           </div>
                         )}

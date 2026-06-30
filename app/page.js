@@ -153,8 +153,8 @@ const ERBERSATZ_CYCLE_YEARS = 30;
 const ERBERSATZ_CHILDREN = 2;
 const ERBERSATZ_CHILD_ALLOWANCE = 400_000; // Freibetrag je Kind, Steuerklasse I
 const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerklasse I (Kinder)
-const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0;
-const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0;
+const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0.8; // 80 % gem. § 20 InvStG für körperschaftsteuerpflichtige Anleger (Aktienfonds)
+const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0.3; // 30 % gem. § 20 InvStG für private Anleger (Aktienfonds)
 
 const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },

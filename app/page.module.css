@@ -207,6 +207,12 @@
   margin-top: 8px;
 }
 
+.yearFilterRow {
+  margin-top: 8px;
+  margin-bottom: 16px;
+  max-width: 220px;
+}
+
 .yearCard {
   border: 1px solid #e2e8f0;
   border-radius: 10px;

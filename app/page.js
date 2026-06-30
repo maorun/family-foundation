@@ -92,28 +92,12 @@ const FIELD_DEFINITIONS = [
     defaultValue: 15,
   },
   {
-    id: "foundationEtfPartialExemptionRate",
-    label: "ETF-Teilfreistellung Stiftung (%)",
-    min: 0,
-    max: 100,
-    step: "1",
-    defaultValue: 0,
-  },
-  {
     id: "privateEtfTaxRate",
     label: "ETF-Steuersatz Privat/Vergleich (%)",
     min: 0,
     max: 100,
     step: "0.1",
     defaultValue: 26.375,
-  },
-  {
-    id: "privateEtfPartialExemptionRate",
-    label: "ETF-Teilfreistellung Privat/Vergleich (%)",
-    min: 0,
-    max: 100,
-    step: "1",
-    defaultValue: 0,
   },
   {
     id: "projectionYears",
@@ -169,6 +153,8 @@ const ERBERSATZ_CYCLE_YEARS = 30;
 const ERBERSATZ_CHILDREN = 2;
 const ERBERSATZ_CHILD_ALLOWANCE = 400_000; // Freibetrag je Kind, Steuerklasse I
 const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerklasse I (Kinder)
+const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0;
+const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0;
 
 const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },
@@ -288,9 +274,9 @@ function validateFormValues(formValues) {
       depreciationRate: parsedValues.depreciationRate / 100,
       etfReturnRate: parsedValues.etfReturnRate / 100,
       foundationEtfTaxRate: parsedValues.foundationEtfTaxRate / 100,
-      foundationEtfPartialExemptionRate: parsedValues.foundationEtfPartialExemptionRate / 100,
+      foundationEtfPartialExemptionRate: FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE,
       privateEtfTaxRate: parsedValues.privateEtfTaxRate / 100,
-      privateEtfPartialExemptionRate: parsedValues.privateEtfPartialExemptionRate / 100,
+      privateEtfPartialExemptionRate: PRIVATE_ETF_PARTIAL_EXEMPTION_RATE,
       projectionYears: parsedValues.projectionYears,
     },
   };

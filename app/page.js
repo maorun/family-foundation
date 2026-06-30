@@ -92,12 +92,28 @@ const FIELD_DEFINITIONS = [
     defaultValue: 15,
   },
   {
+    id: "foundationEtfPartialExemptionRate",
+    label: "ETF-Teilfreistellung Stiftung (%)",
+    min: 0,
+    max: 100,
+    step: "1",
+    defaultValue: 0,
+  },
+  {
     id: "privateEtfTaxRate",
     label: "ETF-Steuersatz Privat/Vergleich (%)",
     min: 0,
     max: 100,
     step: "0.1",
     defaultValue: 26.375,
+  },
+  {
+    id: "privateEtfPartialExemptionRate",
+    label: "ETF-Teilfreistellung Privat/Vergleich (%)",
+    min: 0,
+    max: 100,
+    step: "1",
+    defaultValue: 0,
   },
   {
     id: "projectionYears",
@@ -272,7 +288,9 @@ function validateFormValues(formValues) {
       depreciationRate: parsedValues.depreciationRate / 100,
       etfReturnRate: parsedValues.etfReturnRate / 100,
       foundationEtfTaxRate: parsedValues.foundationEtfTaxRate / 100,
+      foundationEtfPartialExemptionRate: parsedValues.foundationEtfPartialExemptionRate / 100,
       privateEtfTaxRate: parsedValues.privateEtfTaxRate / 100,
+      privateEtfPartialExemptionRate: parsedValues.privateEtfPartialExemptionRate / 100,
       projectionYears: parsedValues.projectionYears,
     },
   };
@@ -349,10 +367,17 @@ function createProjectionInput(
   };
 }
 
-function computeEtfSaleTaxData(balanceAfterTax, contributionsAfterInvestment, taxedGainsAfterYear, taxRate) {
+function computeEtfSaleTaxData(
+  balanceAfterTax,
+  contributionsAfterInvestment,
+  taxedGainsAfterYear,
+  taxRate,
+  partialExemptionRate,
+) {
+  const taxableRatio = Math.max(0, 1 - partialExemptionRate);
   const taxableSaleGain = Math.max(
     0,
-    balanceAfterTax - contributionsAfterInvestment - taxedGainsAfterYear,
+    (balanceAfterTax - contributionsAfterInvestment) * taxableRatio - taxedGainsAfterYear,
   );
   const saleTax = taxableSaleGain * taxRate;
   const etfLiquidationValue = balanceAfterTax - saleTax;
@@ -367,13 +392,15 @@ function applyEtfYear({
   etfTaxedGains,
   returnRate,
   taxRate,
+  partialExemptionRate,
 }) {
+  const taxableRatio = Math.max(0, 1 - partialExemptionRate);
   const etfInvestment = Math.max(0, cash);
   const cashAfterInvestment = cash - etfInvestment;
   const etfBalanceAfterInvestment = etfBalance + etfInvestment;
   const etfContributionsAfterInvestment = etfContributions + etfInvestment;
   const grossEtfReturn = etfBalanceAfterInvestment * returnRate;
-  const taxableVorabGain = grossEtfReturn;
+  const taxableVorabGain = grossEtfReturn * taxableRatio;
   const vorabTax = taxableVorabGain * taxRate;
   const etfBalanceAfterTax = etfBalanceAfterInvestment + grossEtfReturn - vorabTax;
   const etfTaxedGainsAfterYear = etfTaxedGains + taxableVorabGain;
@@ -382,6 +409,7 @@ function applyEtfYear({
     etfContributionsAfterInvestment,
     etfTaxedGainsAfterYear,
     taxRate,
+    partialExemptionRate,
   );
 
   return {
@@ -566,6 +594,7 @@ function calculateProjection(input) {
         foundationEtfContributions,
         foundationEtfTaxedGains,
         input.foundationEtfTaxRate,
+        input.foundationEtfPartialExemptionRate,
       );
       const netWealthForErbs =
         foundationCash + foundationEtfLiquidationForErbs + propertyValue - remainingLoan;
@@ -591,6 +620,7 @@ function calculateProjection(input) {
       etfTaxedGains: foundationEtfTaxedGains,
       returnRate: input.etfReturnRate,
       taxRate: input.foundationEtfTaxRate,
+      partialExemptionRate: input.foundationEtfPartialExemptionRate,
     });
     foundationCash = foundationEtf.cashAfterInvestment;
     foundationEtfBalance = foundationEtf.etfBalanceAfterTax;
@@ -604,6 +634,7 @@ function calculateProjection(input) {
       etfTaxedGains: personEtfTaxedGains,
       returnRate: input.etfReturnRate,
       taxRate: input.privateEtfTaxRate,
+      partialExemptionRate: input.privateEtfPartialExemptionRate,
     });
     personCash = personEtf.cashAfterInvestment;
     personEtfBalance = personEtf.etfBalanceAfterTax;
@@ -617,6 +648,7 @@ function calculateProjection(input) {
       etfTaxedGains: compareEtfTaxedGains,
       returnRate: input.etfReturnRate,
       taxRate: input.privateEtfTaxRate,
+      partialExemptionRate: input.privateEtfPartialExemptionRate,
     });
     privateCash = compareEtf.cashAfterInvestment;
     compareEtfBalance = compareEtf.etfBalanceAfterTax;
@@ -927,12 +959,12 @@ export default function Home() {
     {
       title: `Person: Vermögensposition Jahr ${result.input.projectionYears}`,
       value: formatCurrency(lastYear.personAssetPosition),
-      detail: `Persönlicher Steuersatz ${formatPercent(lastYear.personalTaxRate * 100)}, ETF-Rendite ${formatPercent(result.input.etfReturnRate * 100)}, ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}`,
+      detail: `Persönlicher Steuersatz ${formatPercent(lastYear.personalTaxRate * 100)}, ETF-Rendite ${formatPercent(result.input.etfReturnRate * 100)}, ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}, Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}`,
     },
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (Privatvermietung)`,
       value: formatCurrency(lastYear.compareWealth),
-      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)})`,
+      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
     },
   ];
 
@@ -1843,7 +1875,7 @@ export default function Home() {
                       <div className={styles.dataItem}>
                         <dt>ETF-Verkaufsteuer (wenn Verkauf in Jahr {row.year})</dt>
                         <dd className={styles.negative}>{formatCurrency(row.foundationEtfSaleTax)}</dd>
-                        <small className={styles.formula}>max(0, {formatCurrency(row.foundationEtfBalance)} − Einzahlungen − bereits vorab besteuerte Gewinne) × {formatPercent(result.input.foundationEtfTaxRate * 100)} = Steuer auf {formatCurrency(row.foundationEtfTaxableSaleGain)}</small>
+                        <small className={styles.formula}>max(0, ({formatCurrency(row.foundationEtfBalance)} − Einzahlungen) × (1 − {formatPercent(result.input.foundationEtfPartialExemptionRate * 100)}) − bereits vorab besteuerte Gewinne) × {formatPercent(result.input.foundationEtfTaxRate * 100)} = Steuer auf {formatCurrency(row.foundationEtfTaxableSaleGain)}</small>
                       </div>
                     )}
                     <div className={styles.dataItem}>
@@ -1884,7 +1916,13 @@ export default function Home() {
             {formatPercent(result.input.etfReturnRate * 100)}). Die Vorabpauschale
             wird für ETF-Erträge jährlich mit getrennten Sätzen angesetzt
             (Stiftung: {formatPercent(result.input.foundationEtfTaxRate * 100)},
-            Privat/Vergleich: {formatPercent(result.input.privateEtfTaxRate * 100)});
+            Privat/Vergleich: {formatPercent(result.input.privateEtfTaxRate * 100)}).
+            Für die ETF-Steuerbasis gilt eine Teilfreistellung (Stiftung:
+            {" "}
+            {formatPercent(result.input.foundationEtfPartialExemptionRate * 100)},
+            Privat/Vergleich:
+            {" "}
+            {formatPercent(result.input.privateEtfPartialExemptionRate * 100)});
             zusätzlich wird eine hypothetische Verkaufsteuer auf noch nicht über
             Vorabpauschale besteuerte ETF-Gewinne berücksichtigt. Die
             Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle 30 Jahre auf

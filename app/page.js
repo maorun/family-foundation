@@ -354,6 +354,7 @@ function calculateProjection(input) {
   // Erbersatzsteuer-Tracking (§ 1 Abs. 1 Nr. 4 ErbStG)
   let erbsRemainingLiability = 0;
   let erbsCurrentInstallment = 0;
+  let erbsCurrentCycleAmount = 0;
 
   // Vergleichsszenario: Privatvermietung ohne Stiftung
   // Kein Schenkungssteuerabzug, Mieteinnahmen zum persönlichen Steuersatz besteuert,
@@ -380,6 +381,8 @@ function calculateProjection(input) {
       equity: foundationCash + buildingBookValue0 - remainingLoan,
       // Erbersatzsteuer
       erbsTriggeredAmount: 0,
+      erbsInstallmentShare: 0,
+      erbsCurrentCycleAmount: 0,
       erbsInstallmentPaid: 0,
       erbsRemainingLiability: 0,
       // Vergleichsvermögen Privatvermietung Jahr 0
@@ -451,16 +454,8 @@ function calculateProjection(input) {
     const buildingDepreciableValue = remainingDepreciableBuildingValue;
     const buildingBookValue = buildingDepreciableValue + landBookBase;
 
-    // Erbersatzsteuer: Jahresrate auszahlen (aus Vorjahres-Zyklus)
-    let erbsTriggeredAmount = 0;
-    let erbsInstallmentPaid = 0;
-    if (erbsRemainingLiability > 0) {
-      erbsInstallmentPaid = Math.min(erbsCurrentInstallment, erbsRemainingLiability);
-      foundationCash -= erbsInstallmentPaid;
-      erbsRemainingLiability -= erbsInstallmentPaid;
-    }
-
     // Erbersatzsteuer: Auslösung alle 30 Jahre (frühestens Jahr 30, nie Jahr 0)
+    let erbsTriggeredAmount = 0;
     if (year > 0 && year % ERBERSATZ_CYCLE_YEARS === 0) {
       const netWealthForErbs = foundationCash + propertyValue - remainingLoan;
       const perChildTaxable = Math.max(
@@ -470,8 +465,24 @@ function calculateProjection(input) {
       erbsTriggeredAmount = ERBERSATZ_CHILDREN * perChildTaxable * ERBERSATZ_TAX_RATE;
       // Ratenzahlung über 30 Jahre (§ 24 ErbStG)
       erbsRemainingLiability += erbsTriggeredAmount;
+      erbsCurrentCycleAmount = erbsTriggeredAmount;
       erbsCurrentInstallment = erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS;
     }
+
+    // Erbersatzsteuer: Jahresrate auszahlen
+    let erbsInstallmentPaid = 0;
+    if (erbsRemainingLiability > 0) {
+      erbsInstallmentPaid = Math.min(erbsCurrentInstallment, erbsRemainingLiability);
+      foundationCash -= erbsInstallmentPaid;
+      erbsRemainingLiability -= erbsInstallmentPaid;
+      if (erbsRemainingLiability <= 0) {
+        erbsRemainingLiability = 0;
+        erbsCurrentInstallment = 0;
+        erbsCurrentCycleAmount = 0;
+      }
+    }
+    const erbsInstallmentShare =
+      erbsCurrentCycleAmount > 0 ? erbsInstallmentPaid / erbsCurrentCycleAmount : 0;
 
     rows.push({
       year,
@@ -505,6 +516,8 @@ function calculateProjection(input) {
       equity: foundationCash + buildingBookValue - remainingLoan - erbsRemainingLiability,
       // Erbersatzsteuer
       erbsTriggeredAmount,
+      erbsInstallmentShare,
+      erbsCurrentCycleAmount,
       erbsInstallmentPaid,
       erbsRemainingLiability,
       // Vergleichsvermögen Privatvermietung
@@ -1470,10 +1483,17 @@ export default function Home() {
                             </small>
                           </div>
                         )}
-                        {row.erbsInstallmentPaid > 0 && (
+                        {row.year > 0 && (
                           <div className={styles.dataItem}>
-                            <dt>Erbersatzsteuer: Jahresrate (Zahlung an Finanzamt)</dt>
-                            <dd className={styles.negative}>{formatCurrency(row.erbsInstallmentPaid)}</dd>
+                            <dt>Erbersatzsteuer: zahlbarer Jahresanteil</dt>
+                            <dd className={row.erbsInstallmentShare > 0 ? styles.negative : undefined}>
+                              {formatPercent(row.erbsInstallmentShare * 100)}
+                            </dd>
+                            <small className={styles.formula}>
+                              {row.erbsCurrentCycleAmount > 0
+                                ? `${formatCurrency(row.erbsInstallmentPaid)} von ${formatCurrency(row.erbsCurrentCycleAmount)} (aktueller Steuerfall)`
+                                : "Keine laufende Erbersatzsteuer-Rate"}
+                            </small>
                           </div>
                         )}
                       </dl>
@@ -1594,7 +1614,7 @@ export default function Home() {
                       {row.year === 0 ? (
                         <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                       ) : (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""})</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       )}
                     </div>
                     <div className={styles.dataItem}>

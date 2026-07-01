@@ -369,6 +369,37 @@ function computeEtfSaleTaxData(
   return { taxableSaleGain, saleTax, etfLiquidationValue };
 }
 
+function computePartialEtfSale(
+  neededNetProceeds,
+  etfBalance,
+  etfContributions,
+  etfTaxedGains,
+  taxRate,
+  partialExemptionRate,
+) {
+  if (etfBalance <= 0 || neededNetProceeds <= 0) {
+    return { fraction: 0, grossSale: 0, saleTax: 0, netProceeds: 0 };
+  }
+
+  const taxableRatio = Math.max(0, 1 - partialExemptionRate);
+  const taxableGainBase = Math.max(
+    0,
+    (etfBalance - etfContributions) * taxableRatio - etfTaxedGains,
+  );
+  const fullLiquidationValue = etfBalance - taxableGainBase * taxRate;
+
+  if (fullLiquidationValue <= 0) {
+    return { fraction: 1, grossSale: etfBalance, saleTax: 0, netProceeds: 0 };
+  }
+
+  const fraction = Math.min(1, neededNetProceeds / fullLiquidationValue);
+  const grossSale = fraction * etfBalance;
+  const saleTax = fraction * taxableGainBase * taxRate;
+  const netProceeds = grossSale - saleTax;
+
+  return { fraction, grossSale, saleTax, netProceeds };
+}
+
 function applyEtfYear({
   cash,
   etfBalance,
@@ -435,12 +466,20 @@ function calculateProjection(input) {
   const initialCash =
     input.initialCapital - giftTax + input.loanAmount - propertyValue - realEstateTax;
 
-  let foundationCash = initialCash;
+  // Deferred purchase: if there is not enough money even with the loan, invest in ETF first
+  // and buy the property once the ETF has grown enough to cover property + transfer tax
+  const deferredPurchase = initialCash < 0;
+
+  let foundationOwnsProperty = !deferredPurchase;
+  let purchaseYear = deferredPurchase ? null : 0;
+
+  // In deferred mode: start with equity only (no loan taken, no property bought yet)
+  let foundationCash = deferredPurchase ? input.initialCapital - giftTax : initialCash;
   let foundationEtfBalance = 0;
   let foundationEtfContributions = 0;
   let foundationEtfTaxedGains = 0;
-  let remainingLoan = input.loanAmount;
-  let remainingDepreciableBuildingValue = depreciableBuildingBase;
+  let remainingLoan = deferredPurchase ? 0 : input.loanAmount;
+  let remainingDepreciableBuildingValue = deferredPurchase ? 0 : depreciableBuildingBase;
   let personCash = 0;
   let personEtfBalance = 0;
   let personEtfContributions = 0;
@@ -461,7 +500,7 @@ function calculateProjection(input) {
   let compareEtfTaxedGains = 0;
   let privateRemainingDepreciableBuilding = privateDepreciableBuildingBase;
 
-  const buildingBookValue0 = depreciableBuildingBase + landBookBase;
+  const buildingBookValue0 = deferredPurchase ? 0 : depreciableBuildingBase + landBookBase;
 
   const rows = [
     {
@@ -472,10 +511,12 @@ function calculateProjection(input) {
       foundationVorabTax: 0,
       foundationEtfSaleTax: 0,
       taxableResult: -giftTax,
-      foundationWealth: foundationCash + propertyValue - remainingLoan,
+      foundationWealth: deferredPurchase
+        ? foundationCash
+        : foundationCash + propertyValue - remainingLoan,
       remainingLoan,
       personNetCashFlow: 0,
-      personAssetPosition: remainingLoan,
+      personAssetPosition: deferredPurchase ? 0 : remainingLoan,
       personCash,
       personEtfBalance,
       personEtfLiquidationValue: 0,
@@ -484,8 +525,8 @@ function calculateProjection(input) {
       personalTaxRate: getPersonalTaxRateForYear(input.personalTaxSteps, 1),
       // Bilanz Jahr 0
       buildingBookValue: buildingBookValue0,
-      totalAssets: foundationCash + buildingBookValue0,
-      equity: foundationCash + buildingBookValue0 - remainingLoan,
+      totalAssets: deferredPurchase ? foundationCash : foundationCash + buildingBookValue0,
+      equity: deferredPurchase ? foundationCash : foundationCash + buildingBookValue0 - remainingLoan,
       // Erbersatzsteuer
       erbsTriggeredAmount: 0,
       erbsInstallmentShare: 0,
@@ -498,56 +539,131 @@ function calculateProjection(input) {
       compareEtfLiquidationValue: 0,
       compareVorabTax: 0,
       compareEtfSaleTax: 0,
+      propertyOwned: !deferredPurchase,
+      propertyBoughtThisYear: false,
+      etfSaleForPurchase: 0,
+      etfSaleTaxForPurchase: 0,
+      etfSaleNetForPurchase: 0,
     },
   ];
 
   for (let year = 1; year <= input.projectionYears; year += 1) {
     const yearPersonalTaxRate = getPersonalTaxRateForYear(input.personalTaxSteps, year);
-    const annualInterest = remainingLoan * input.loanInterestRate;
-    const scheduledRepaymentTarget = Math.min(
-      remainingLoan,
-      input.loanAmount * input.loanRepaymentRate,
-    );
-    const annualDepreciation = Math.min(
-      remainingDepreciableBuildingValue,
-      depreciableBuildingBase * input.depreciationRate,
-    );
-    const taxableResult =
-      annualRent -
-      input.annualAdminCost -
-      annualInterest -
-      annualDepreciation;
-    // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
-    // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
-    const foundationCashFlow =
-      annualRent -
-      input.annualAdminCost -
-      annualInterest;
-    const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
-    // Business rule: normal repayment is always paid each year, even with negative cash.
-    const scheduledRepayment = scheduledRepaymentTarget;
 
-    // Jährlichen Überschuss als Sondertilgung verwenden
-    const extraRepayment = input.surplusToRepayment
-      ? Math.min(
-          Math.max(0, availableCashBeforeRepayment - scheduledRepayment),
-          remainingLoan - scheduledRepayment,
-        )
-      : 0;
+    // Deferred-purchase check: buy property if ETF + loan now covers the full acquisition cost
+    let propertyBoughtThisYear = false;
+    let etfSaleForPurchase = 0;
+    let etfSaleTaxForPurchase = 0;
+    let etfSaleNetForPurchase = 0;
+
+    if (deferredPurchase && !foundationOwnsProperty) {
+      const { etfLiquidationValue: currentEtfLiq } = computeEtfSaleTaxData(
+        foundationEtfBalance,
+        foundationEtfContributions,
+        foundationEtfTaxedGains,
+        input.foundationEtfTaxRate,
+        input.foundationEtfPartialExemptionRate,
+      );
+
+      if (currentEtfLiq + input.loanAmount >= propertyValue + realEstateTax) {
+        // Sell the portion of ETF needed to cover what the loan does not
+        const neededFromEtf = Math.max(0, propertyValue + realEstateTax - input.loanAmount);
+        if (neededFromEtf > 0 && foundationEtfBalance > 0) {
+          const saleResult = computePartialEtfSale(
+            neededFromEtf,
+            foundationEtfBalance,
+            foundationEtfContributions,
+            foundationEtfTaxedGains,
+            input.foundationEtfTaxRate,
+            input.foundationEtfPartialExemptionRate,
+          );
+          etfSaleForPurchase = saleResult.grossSale;
+          etfSaleTaxForPurchase = saleResult.saleTax;
+          etfSaleNetForPurchase = saleResult.netProceeds;
+          foundationCash += saleResult.netProceeds;
+          foundationEtfBalance -= saleResult.grossSale;
+          foundationEtfContributions *= (1 - saleResult.fraction);
+          foundationEtfTaxedGains *= (1 - saleResult.fraction);
+        }
+
+        // Take loan and buy property
+        foundationCash += input.loanAmount;
+        foundationCash -= propertyValue + realEstateTax;
+        remainingLoan = input.loanAmount;
+        remainingDepreciableBuildingValue = depreciableBuildingBase;
+        foundationOwnsProperty = true;
+        purchaseYear = year;
+        propertyBoughtThisYear = true;
+      }
+    }
+
+    // Annual cash flows – branch on whether the foundation now owns the property
+    let annualInterest;
+    let scheduledRepaymentTarget;
+    let annualDepreciation;
+    let taxableResult;
+    let foundationCashFlow;
+    let scheduledRepayment = 0;
+    let extraRepayment = 0;
+    let lenderTax = 0;
+    let lenderNetCashFlow = 0;
 
     const loanAtStartOfYear = remainingLoan;
-    const lenderTax = annualInterest * yearPersonalTaxRate;
-    const lenderNetCashFlow =
-      scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
-
     const prevFoundationCash = foundationCash;
-    foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
-    remainingLoan -= scheduledRepayment + extraRepayment;
-    remainingDepreciableBuildingValue = Math.max(
-      0,
-      remainingDepreciableBuildingValue - annualDepreciation,
-    );
-    personCash += lenderNetCashFlow;
+
+    if (foundationOwnsProperty) {
+      annualInterest = remainingLoan * input.loanInterestRate;
+      scheduledRepaymentTarget = Math.min(
+        remainingLoan,
+        input.loanAmount * input.loanRepaymentRate,
+      );
+      annualDepreciation = Math.min(
+        remainingDepreciableBuildingValue,
+        depreciableBuildingBase * input.depreciationRate,
+      );
+      taxableResult =
+        annualRent -
+        input.annualAdminCost -
+        annualInterest -
+        annualDepreciation;
+      // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
+      // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
+      foundationCashFlow =
+        annualRent -
+        input.annualAdminCost -
+        annualInterest;
+      const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
+      // Business rule: normal repayment is always paid each year, even with negative cash.
+      scheduledRepayment = scheduledRepaymentTarget;
+
+      // Jährlichen Überschuss als Sondertilgung verwenden
+      extraRepayment = input.surplusToRepayment
+        ? Math.min(
+            Math.max(0, availableCashBeforeRepayment - scheduledRepayment),
+            remainingLoan - scheduledRepayment,
+          )
+        : 0;
+
+      lenderTax = annualInterest * yearPersonalTaxRate;
+      lenderNetCashFlow =
+        scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
+
+      foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
+      remainingLoan -= scheduledRepayment + extraRepayment;
+      remainingDepreciableBuildingValue = Math.max(
+        0,
+        remainingDepreciableBuildingValue - annualDepreciation,
+      );
+      personCash += lenderNetCashFlow;
+    } else {
+      // No property yet – only annual admin costs; ETF returns cover operating costs
+      annualInterest = 0;
+      scheduledRepaymentTarget = 0;
+      annualDepreciation = 0;
+      taxableResult = -input.annualAdminCost;
+      foundationCashFlow = -input.annualAdminCost;
+      foundationCash += foundationCashFlow;
+    }
 
     // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
     const privateDepreciation = Math.min(
@@ -563,7 +679,9 @@ function calculateProjection(input) {
     );
 
     const buildingDepreciableValue = remainingDepreciableBuildingValue;
-    const buildingBookValue = buildingDepreciableValue + landBookBase;
+    const buildingBookValue = foundationOwnsProperty
+      ? buildingDepreciableValue + landBookBase
+      : 0;
 
     // Erbersatzsteuer: Auslösung alle 30 Jahre (frühestens Jahr 30, nie Jahr 0)
     let erbsTriggeredAmount = 0;
@@ -575,8 +693,9 @@ function calculateProjection(input) {
         input.foundationEtfTaxRate,
         input.foundationEtfPartialExemptionRate,
       );
-      const netWealthForErbs =
-        foundationCash + foundationEtfLiquidationForErbs + propertyValue - remainingLoan;
+      const netWealthForErbs = foundationOwnsProperty
+        ? foundationCash + foundationEtfLiquidationForErbs + propertyValue - remainingLoan
+        : foundationCash + foundationEtfLiquidationForErbs;
       const perChildTaxable = Math.max(
         0,
         netWealthForErbs / ERBERSATZ_CHILDREN - ERBERSATZ_CHILD_ALLOWANCE,
@@ -660,7 +779,7 @@ function calculateProjection(input) {
       foundationWealth:
         foundationCash +
         foundationEtf.etfLiquidationValue +
-        propertyValue -
+        (foundationOwnsProperty ? propertyValue : 0) -
         remainingLoan -
         erbsRemainingLiability,
       remainingLoan,
@@ -675,7 +794,7 @@ function calculateProjection(input) {
       personVorabTax: personEtf.vorabTax,
       personEtfSaleTax: personEtf.saleTax,
       // GuV Stiftung
-      guvRent: annualRent,
+      guvRent: foundationOwnsProperty ? annualRent : 0,
       guvAdminCost: input.annualAdminCost,
       guvInterest: annualInterest,
       guvDepreciation: annualDepreciation,
@@ -714,6 +833,12 @@ function calculateProjection(input) {
       compareGrossEtfReturn: compareEtf.grossEtfReturn,
       compareVorabTax: compareEtf.vorabTax,
       compareEtfSaleTax: compareEtf.saleTax,
+      // Deferred-purchase fields
+      propertyOwned: foundationOwnsProperty,
+      propertyBoughtThisYear,
+      etfSaleForPurchase,
+      etfSaleTaxForPurchase,
+      etfSaleNetForPurchase,
     });
   }
 
@@ -731,6 +856,8 @@ function calculateProjection(input) {
     privateDepreciableBuildingBase,
     propertyValue,
     initialCash,
+    deferredPurchase,
+    purchaseYear,
     annualDepreciationBase: depreciableBuildingBase * input.depreciationRate,
     rows,
   };
@@ -912,29 +1039,47 @@ export default function Home() {
       detail: `Gebäude ${formatCurrency(result.input.buildingValue)} + Grundstück ${formatCurrency(result.input.landValue)}`,
     },
     {
-      title: "Annuitätsdarlehen (Jahr 1)",
+      title: result.deferredPurchase
+        ? `Annuitätsdarlehen (ab Immobilienkauf${result.purchaseYear != null ? ` Jahr ${result.purchaseYear}` : ""})`
+        : "Annuitätsdarlehen (Jahr 1)",
       value: formatCurrency(result.input.loanAmount * (result.input.loanInterestRate + result.input.loanRepaymentRate)),
       detail: `Zinsrate ${formatPercent(result.input.loanInterestRate * 100)} + Tilgungsrate ${formatPercent(result.input.loanRepaymentRate * 100)} auf ${formatCurrency(result.input.loanAmount)}`,
     },
     {
       title: "Mieteinnahmen p.a.",
       value: formatCurrency(result.annualRent),
-      detail: `${formatCurrency(result.input.monthlyRent)} pro Monat`,
+      detail: result.deferredPurchase && result.purchaseYear == null
+        ? "Immobilie nicht erworben im Betrachtungszeitraum – keine Mieteinnahmen"
+        : `${formatCurrency(result.input.monthlyRent)} pro Monat${result.deferredPurchase && result.purchaseYear != null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
     },
     {
       title: "AfA p.a.",
       value: formatCurrency(result.annualDepreciationBase),
-      detail: `${formatPercent(result.input.depreciationRate * 100)} auf ${formatCurrency(result.depreciableBuildingBase)}`,
+      detail: `${formatPercent(result.input.depreciationRate * 100)} auf ${formatCurrency(result.depreciableBuildingBase)}${result.deferredPurchase && result.purchaseYear != null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
     },
-    {
-      title: "Stiftung: Startliquidität nach Ankauf",
-      value: formatCurrency(result.initialCash),
-      detail: "Jahr 0 vor laufender Bewirtschaftung",
-    },
+    result.deferredPurchase
+      ? {
+          title: result.purchaseYear != null
+            ? `Stiftung: Immobilienkauf in Jahr ${result.purchaseYear}`
+            : "Stiftung: Immobilienkauf – nicht im Betrachtungszeitraum",
+          value: result.purchaseYear != null
+            ? formatCurrency(result.propertyValue + result.realEstateTax)
+            : "–",
+          detail: result.purchaseYear != null
+            ? `ETF-Phase bis Jahr ${result.purchaseYear - 1}; Kaufpreis ${formatCurrency(result.propertyValue)} + GrESt ${formatCurrency(result.realEstateTax)}`
+            : `ETF wächst auf ${formatCurrency(result.rows[result.rows.length - 1]?.foundationEtfLiquidationValue ?? 0)} (Liquidationswert Jahr ${result.input.projectionYears})`,
+        }
+      : {
+          title: "Stiftung: Startliquidität nach Ankauf",
+          value: formatCurrency(result.initialCash),
+          detail: "Jahr 0 vor laufender Bewirtschaftung",
+        },
     {
       title: "Stiftung: Nettovermögen Jahr 1",
       value: formatCurrency(firstYear.foundationWealth),
-      detail: `Liquiditätsüberschuss ${formatCurrency(firstYear.foundationCashFlow)}`,
+      detail: result.deferredPurchase && !(firstYear.propertyOwned)
+        ? `ETF-Phase: Verwaltungskosten ${formatCurrency(result.input.annualAdminCost)} p.a.`
+        : `Liquiditätsüberschuss ${formatCurrency(firstYear.foundationCashFlow)}`,
     },
     {
       title: `Stiftung: Nettovermögen Jahr ${result.input.projectionYears}`,
@@ -1625,6 +1770,17 @@ export default function Home() {
               <div key={row.year} className={styles.yearCard}>
                 <h3 className={styles.yearCardTitle}>Jahr {row.year}</h3>
 
+                {row.propertyBoughtThisYear && (
+                  <p className={styles.hint}>
+                    🏠 Immobilie in diesem Jahr erworben (ETF-Teilverkauf {formatCurrency(row.etfSaleForPurchase)}, davon Steuer {formatCurrency(row.etfSaleTaxForPurchase)}, Nettomittel {formatCurrency(row.etfSaleNetForPurchase)}; Darlehen {formatCurrency(result.input.loanAmount)} aufgenommen).
+                  </p>
+                )}
+                {result.deferredPurchase && !row.propertyOwned && row.year > 0 && (
+                  <p className={styles.hint}>
+                    📈 ETF-Phase: Noch kein Immobilienkauf – Kapital in ETF investiert, laufende Kosten werden aus Erträgen gedeckt.
+                  </p>
+                )}
+
                 <div className={styles.yearSection}>
                   <h4 className={styles.yearSectionTitle}>Übersicht</h4>
                   <div className={styles.guvColumns}>
@@ -1634,26 +1790,46 @@ export default function Home() {
                         <div className={styles.dataItem}>
                           {row.year > 0 ? (
                             <>
-                              <dt>Jährl. Liquiditätsüberschuss</dt>
+                              <dt>{row.propertyOwned ? "Jährl. Liquiditätsüberschuss" : "Jährl. Liquiditätsveränderung (ETF-Phase)"}</dt>
                               <dd className={row.foundationCashFlow < 0 ? styles.negative : styles.positive}>
                                 {formatCurrency(row.foundationCashFlow)}
                               </dd>
-                              <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen)</small>
+                              {row.propertyOwned ? (
+                                <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen)</small>
+                              ) : (
+                                <small className={styles.formula}>− {formatCurrency(row.guvAdminCost)} (Verwaltungskosten, keine Mieteinnahmen)</small>
+                              )}
                             </>
                           ) : (
                             <>
                               <dt>Startliquidität</dt>
                               <dd>{formatCurrency(row.foundationCash)}</dd>
-                              <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                              {result.deferredPurchase ? (
+                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) — Immobilienkauf zurückgestellt</small>
+                              ) : (
+                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                              )}
                             </>
                           )}
                         </div>
                         <div className={styles.dataItem}>
                           <dt>Steuerliches Ergebnis</dt>
                           <dd>{formatCurrency(row.taxableResult)}</dd>
-                          {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>}
+                          {row.year > 0 && row.propertyOwned && (
+                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>
+                          )}
+                          {row.year > 0 && !row.propertyOwned && (
+                            <small className={styles.formula}>− {formatCurrency(row.guvAdminCost)} (Verwaltungskosten, keine Immobilienerträge)</small>
+                          )}
                         </div>
-                        {row.year === 0 && (
+                        {row.year === 0 && !result.deferredPurchase && (
+                          <div className={styles.dataItem}>
+                            <dt>Grunderwerbsteuer (Anschaffungskosten)</dt>
+                            <dd className={styles.negative}>{formatCurrency(result.realEstateTax)}</dd>
+                            <small className={styles.formula}>{formatPercent(result.input.realEstateTaxRate * 100)} × {formatCurrency(result.propertyValue)} (Kaufpreis) — Gebäudeanteil {formatCurrency(result.realEstateTaxBuildingPortion)} wird abgeschrieben</small>
+                          </div>
+                        )}
+                        {row.propertyBoughtThisYear && (
                           <div className={styles.dataItem}>
                             <dt>Grunderwerbsteuer (Anschaffungskosten)</dt>
                             <dd className={styles.negative}>{formatCurrency(result.realEstateTax)}</dd>
@@ -1663,7 +1839,11 @@ export default function Home() {
                         <div className={styles.dataItem}>
                           <dt>Nettovermögen</dt>
                           <dd>{formatCurrency(row.foundationWealth)}</dd>
-                          <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(row.foundationEtfLiquidationValue)} (ETF nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
+                          {row.propertyOwned ? (
+                            <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(row.foundationEtfLiquidationValue)} (ETF nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) − {formatCurrency(row.remainingLoan)} (Restdarlehen){row.erbsRemainingLiability > 0 ? ` − ${formatCurrency(row.erbsRemainingLiability)} (Erbersatzsteuer-Verbindlichkeit)` : ""}</small>
+                          ) : (
+                            <small className={styles.formula}>{formatCurrency(row.foundationCash)} (Kassenbestand) + {formatCurrency(row.foundationEtfLiquidationValue)} (ETF nach Verkaufsteuer) — keine Immobilie</small>
+                          )}
                         </div>
                         {row.year > 0 && row.year % ERBERSATZ_CYCLE_YEARS === 0 && (
                           <div className={styles.dataItem}>
@@ -1672,7 +1852,7 @@ export default function Home() {
                               {formatCurrency(row.erbsTriggeredAmount)}
                             </dd>
                             <small className={styles.formula}>
-                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + row.foundationEtfLiquidationValue + result.propertyValue - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
+                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + row.foundationEtfLiquidationValue + (row.propertyOwned ? result.propertyValue : 0) - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
                               {row.erbsTriggeredAmount > 0
                                 ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
                                 : " — kein steuerpflichtiger Betrag im aktuellen 30-Jahres-Zyklus"}
@@ -1700,16 +1880,19 @@ export default function Home() {
                         <div className={styles.dataItem}>
                           <dt>Restdarlehen</dt>
                           <dd>{formatCurrency(row.remainingLoan)}</dd>
-                          {row.year > 0 && (
+                          {row.year > 0 && row.propertyOwned && (
                             <small className={styles.formula}>
                               {formatCurrency(row.loanAtStartOfYear)} (Anfangsschuld) − {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` − ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""}
                             </small>
+                          )}
+                          {row.year > 0 && !row.propertyOwned && (
+                            <small className={styles.formula}>Kein Darlehen – Immobilienkauf noch ausstehend</small>
                           )}
                         </div>
                         <div className={styles.dataItem}>
                           <dt>Netto-Zufluss</dt>
                           <dd>{formatCurrency(row.personNetCashFlow)}</dd>
-                          {row.year > 0 && (
+                          {row.year > 0 && row.propertyOwned && (
                             <small className={styles.formula}>
                               {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""} + {formatCurrency(row.personGuvResult)} (Netto-Zinsergebnis)
                             </small>
@@ -1745,7 +1928,11 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Mieteinnahmen</dt>
                             <dd>{formatCurrency(row.guvRent)}</dd>
-                            <small className={styles.formula}>12 Monate × {formatCurrency(result.input.monthlyRent)} (Monatsmiete)</small>
+                            {row.propertyOwned ? (
+                              <small className={styles.formula}>12 Monate × {formatCurrency(result.input.monthlyRent)} (Monatsmiete)</small>
+                            ) : (
+                              <small className={styles.formula}>Keine Mieteinnahmen – Immobilie noch nicht erworben</small>
+                            )}
                           </div>
                           <div className={styles.dataItem}>
                             <dt>Verwaltungskosten</dt>
@@ -1754,12 +1941,18 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Darlehenszinsen</dt>
                             <dd>{formatCurrency(row.guvInterest)}</dd>
-                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} (Restschuld) × {formatPercent(result.input.loanInterestRate * 100)} (Zinssatz)</small>
+                            {row.propertyOwned ? (
+                              <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} (Restschuld) × {formatPercent(result.input.loanInterestRate * 100)} (Zinssatz)</small>
+                            ) : (
+                              <small className={styles.formula}>Kein Darlehen – Immobilienkauf noch ausstehend</small>
+                            )}
                           </div>
                           <div className={styles.dataItem}>
                             <dt>AfA</dt>
                             <dd>{formatCurrency(row.guvDepreciation)}</dd>
-                            <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
+                            {row.propertyOwned && (
+                              <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
+                            )}
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Jahresüberschuss/-fehlbetrag</dt>
@@ -1776,7 +1969,11 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Zinserträge</dt>
                             <dd>{formatCurrency(row.personGuvInterest)}</dd>
-                            <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} (Restschuld) × {formatPercent(result.input.loanInterestRate * 100)} (Zinssatz)</small>
+                            {row.propertyOwned ? (
+                              <small className={styles.formula}>{formatCurrency(row.loanAtStartOfYear)} (Restschuld) × {formatPercent(result.input.loanInterestRate * 100)} (Zinssatz)</small>
+                            ) : (
+                              <small className={styles.formula}>Kein Darlehen ausstehend</small>
+                            )}
                           </div>
                           <div className={styles.dataItem}>
                             <dt>Einkommensteuer auf Zinsen</dt>
@@ -1802,13 +1999,24 @@ export default function Home() {
                     <div className={styles.dataItem}>
                       <dt>Immobilie (Buchwert)</dt>
                       <dd>{formatCurrency(row.buildingBookValue)}</dd>
-                      {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.buildingDepreciableValue)} (Gebäude Restwert) + {formatCurrency(result.realEstateTaxLandPortion + result.input.landValue)} (Grundstück inkl. GrESt-Anteil)</small>}
+                      {row.year > 0 && row.propertyOwned && (
+                        <small className={styles.formula}>{formatCurrency(row.buildingDepreciableValue)} (Gebäude Restwert) + {formatCurrency(result.realEstateTaxLandPortion + result.input.landValue)} (Grundstück inkl. GrESt-Anteil)</small>
+                      )}
+                      {!row.propertyOwned && row.year > 0 && (
+                        <small className={styles.formula}>Immobilie noch nicht erworben</small>
+                      )}
                     </div>
                     <div className={styles.dataItem}>
                       <dt>Kassenbestand</dt>
                       <dd>{formatCurrency(row.foundationCash)}</dd>
                       {row.year === 0 ? (
-                        <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                        result.deferredPurchase ? (
+                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) — kein Ankauf, ETF-Investition ab Jahr 1</small>
+                        ) : (
+                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                        )
+                      ) : row.propertyBoughtThisYear ? (
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf) + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung) − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       ) : (
                         <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}) − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       )}
@@ -1818,6 +2026,9 @@ export default function Home() {
                       <dd>{formatCurrency(row.foundationEtfBalance)}</dd>
                       {row.year > 0 && (
                         <small className={styles.formula}>
+                          {row.propertyBoughtThisYear
+                            ? `Nach Teilverkauf für Immobilienkauf (${formatCurrency(row.etfSaleForPurchase)} verkauft): `
+                            : ""}
                           Vorjahresbestand + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + {formatCurrency(row.foundationGrossEtfReturn)} (Brutto-Rendite) − {formatCurrency(row.foundationVorabTax)} (Vorabpauschale)
                         </small>
                       )}

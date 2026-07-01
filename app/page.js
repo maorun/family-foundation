@@ -1040,7 +1040,7 @@ export default function Home() {
     },
     {
       title: result.deferredPurchase
-        ? `Annuitätsdarlehen (ab Immobilienkauf${result.purchaseYear != null ? ` Jahr ${result.purchaseYear}` : ""})`
+        ? `Annuitätsdarlehen (ab Immobilienkauf${result.purchaseYear !== null ? ` Jahr ${result.purchaseYear}` : ""})`
         : "Annuitätsdarlehen (Jahr 1)",
       value: formatCurrency(result.input.loanAmount * (result.input.loanInterestRate + result.input.loanRepaymentRate)),
       detail: `Zinsrate ${formatPercent(result.input.loanInterestRate * 100)} + Tilgungsrate ${formatPercent(result.input.loanRepaymentRate * 100)} auf ${formatCurrency(result.input.loanAmount)}`,
@@ -1048,24 +1048,24 @@ export default function Home() {
     {
       title: "Mieteinnahmen p.a.",
       value: formatCurrency(result.annualRent),
-      detail: result.deferredPurchase && result.purchaseYear == null
+      detail: result.deferredPurchase && result.purchaseYear === null
         ? "Immobilie nicht erworben im Betrachtungszeitraum – keine Mieteinnahmen"
-        : `${formatCurrency(result.input.monthlyRent)} pro Monat${result.deferredPurchase && result.purchaseYear != null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
+        : `${formatCurrency(result.input.monthlyRent)} pro Monat${result.deferredPurchase && result.purchaseYear !== null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
     },
     {
       title: "AfA p.a.",
       value: formatCurrency(result.annualDepreciationBase),
-      detail: `${formatPercent(result.input.depreciationRate * 100)} auf ${formatCurrency(result.depreciableBuildingBase)}${result.deferredPurchase && result.purchaseYear != null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
+      detail: `${formatPercent(result.input.depreciationRate * 100)} auf ${formatCurrency(result.depreciableBuildingBase)}${result.deferredPurchase && result.purchaseYear !== null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
     },
     result.deferredPurchase
       ? {
-          title: result.purchaseYear != null
+          title: result.purchaseYear !== null
             ? `Stiftung: Immobilienkauf in Jahr ${result.purchaseYear}`
             : "Stiftung: Immobilienkauf – nicht im Betrachtungszeitraum",
-          value: result.purchaseYear != null
+          value: result.purchaseYear !== null
             ? formatCurrency(result.propertyValue + result.realEstateTax)
             : "–",
-          detail: result.purchaseYear != null
+          detail: result.purchaseYear !== null
             ? `ETF-Phase bis Jahr ${result.purchaseYear - 1}; Kaufpreis ${formatCurrency(result.propertyValue)} + GrESt ${formatCurrency(result.realEstateTax)}`
             : `ETF wächst auf ${formatCurrency(result.rows[result.rows.length - 1]?.foundationEtfLiquidationValue ?? 0)} (Liquidationswert Jahr ${result.input.projectionYears})`,
         }

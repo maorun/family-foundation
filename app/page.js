@@ -1049,6 +1049,8 @@ export default function Home() {
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
 
+  const compareScenarioLabel = includeRealEstate ? "Privatvermietung" : "Privates ETF-Investment";
+
   const cards = [
     {
       title: "Schenkungssteuer bei Gründung",
@@ -1128,7 +1130,7 @@ export default function Home() {
       realEstateOnly: true,
     },
     {
-      title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (${includeRealEstate ? "Privatvermietung" : "Privates ETF-Investment"})`,
+      title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (${compareScenarioLabel})`,
       value: formatCurrency(lastYear.compareWealth),
       detail: includeRealEstate
         ? `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
@@ -1167,6 +1169,8 @@ export default function Home() {
     const innerHeight = chartHeight - margin.top - margin.bottom;
     const maxIndex = Math.max(1, result.rows.length - 1);
 
+    const compareSeriesLabel = `Vergleich: ${compareScenarioLabel} (ohne Stiftung)`;
+
     const allSeries = [
       {
         id: "foundation",
@@ -1199,9 +1203,7 @@ export default function Home() {
       },
       {
         id: "compare",
-        label: includeRealEstate
-          ? "Vergleich: Privatvermietung (ohne Stiftung)"
-          : "Vergleich: Privates ETF-Investment (ohne Stiftung)",
+        label: compareSeriesLabel,
         color: "#ea580c",
         values: result.rows.map((row) => ({
           year: row.year,

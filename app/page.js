@@ -46,6 +46,7 @@ const FIELD_DEFINITIONS = [
     min: 0,
     step: "1000",
     defaultValue: 200000,
+    realEstate: true,
   },
   {
     id: "landValue",
@@ -53,6 +54,7 @@ const FIELD_DEFINITIONS = [
     min: 0,
     step: "1000",
     defaultValue: 200000,
+    realEstate: true,
   },
   {
     id: "realEstateTaxRate",
@@ -61,6 +63,7 @@ const FIELD_DEFINITIONS = [
     max: 10,
     step: "0.5",
     defaultValue: 5.0,
+    realEstate: true,
   },
   {
     id: "monthlyRent",
@@ -68,6 +71,7 @@ const FIELD_DEFINITIONS = [
     min: 0,
     step: "50",
     defaultValue: 1500,
+    realEstate: true,
   },
   {
     id: "depreciationRate",
@@ -75,6 +79,7 @@ const FIELD_DEFINITIONS = [
     min: 0,
     step: "0.1",
     defaultValue: 2,
+    realEstate: true,
   },
   {
     id: "etfReturnRate",
@@ -195,6 +200,16 @@ const CHART_MIN_VALUE_FLOOR = 0;
 const DEFAULT_FORM_VALUES = Object.fromEntries(
   FIELD_DEFINITIONS.map((field) => [field.id, String(field.defaultValue)]),
 );
+
+const REAL_ESTATE_FIELD_IDS = new Set(
+  FIELD_DEFINITIONS.filter((f) => f.realEstate).map((f) => f.id),
+);
+
+function getEffectiveFormValues(formValues, includeRealEstate) {
+  if (includeRealEstate) return formValues;
+  const zeros = Object.fromEntries([...REAL_ESTATE_FIELD_IDS].map((id) => [id, "0"]));
+  return { ...formValues, ...zeros };
+}
 
 function formatCurrency(value) {
   return currency.format(value);
@@ -865,7 +880,7 @@ function calculateProjection(input) {
 
 const DEFAULT_RESULT = calculateProjection({
   ...createProjectionInput(
-    validateFormValues(DEFAULT_FORM_VALUES).input,
+    validateFormValues(getEffectiveFormValues(DEFAULT_FORM_VALUES, false)).input,
     getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
     false,
     validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS).parsedSteps,
@@ -903,6 +918,7 @@ export default function Home() {
       bundesland,
       personalTaxSteps,
       selectedOverviewYear,
+      includeRealEstate,
       result,
     },
     setState,
@@ -914,6 +930,7 @@ export default function Home() {
     bundesland: null,
     personalTaxSteps: DEFAULT_PERSONAL_TAX_STEPS,
     selectedOverviewYear: "all",
+    includeRealEstate: false,
     result: DEFAULT_RESULT,
   });
 
@@ -930,7 +947,8 @@ export default function Home() {
       const nextBundesland = parsed.bundesland ?? null;
       const nextPersonalTaxSteps = parsed.personalTaxSteps ?? DEFAULT_PERSONAL_TAX_STEPS;
       const nextSelectedOverviewYear = parsed.selectedOverviewYear ?? "all";
-      const nextValidation = validateFormValues(nextFormValues);
+      const nextIncludeRealEstate = parsed.includeRealEstate ?? false;
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, nextIncludeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(nextPersonalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -942,6 +960,7 @@ export default function Home() {
         bundesland: nextBundesland,
         personalTaxSteps: nextPersonalTaxSteps,
         selectedOverviewYear: nextSelectedOverviewYear,
+        includeRealEstate: nextIncludeRealEstate,
         result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
@@ -949,7 +968,7 @@ export default function Home() {
                 nextRelationship,
                 nextSurplusToRepayment,
                 nextTaxValidation.parsedSteps,
-                nextComparePaysRealEstateTax,
+                nextIncludeRealEstate ? nextComparePaysRealEstateTax : false,
               ),
             )
           : DEFAULT_RESULT,
@@ -973,6 +992,7 @@ export default function Home() {
             bundesland,
             personalTaxSteps,
             selectedOverviewYear,
+            includeRealEstate,
           }),
         );
       } catch {
@@ -988,9 +1008,13 @@ export default function Home() {
     bundesland,
     personalTaxSteps,
     selectedOverviewYear,
+    includeRealEstate,
   ]);
 
-  const validation = useMemo(() => validateFormValues(formValues), [formValues]);
+  const validation = useMemo(
+    () => validateFormValues(getEffectiveFormValues(formValues, includeRealEstate)),
+    [formValues, includeRealEstate],
+  );
   const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
   const hasInvalidFields = validation.invalidIds.length > 0;
   const hasInvalidTaxSteps = taxStepsValidation.parsedSteps === null;
@@ -1022,6 +1046,8 @@ export default function Home() {
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
 
+  const compareScenarioLabel = includeRealEstate ? "Privatvermietung" : "Privates ETF-Investment";
+
   const cards = [
     {
       title: "Schenkungssteuer bei Gründung",
@@ -1032,11 +1058,13 @@ export default function Home() {
       title: "Grunderwerbsteuer",
       value: formatCurrency(result.realEstateTax),
       detail: `${formatPercent(result.input.realEstateTaxRate * 100)} auf ${formatCurrency(result.propertyValue)}`,
+      realEstateOnly: true,
     },
     {
       title: "Kaufpreis Immobilie",
       value: formatCurrency(result.propertyValue),
       detail: `Gebäude ${formatCurrency(result.input.buildingValue)} + Grundstück ${formatCurrency(result.input.landValue)}`,
+      realEstateOnly: true,
     },
     {
       title: result.deferredPurchase
@@ -1044,6 +1072,7 @@ export default function Home() {
         : "Annuitätsdarlehen (Jahr 1)",
       value: formatCurrency(result.input.loanAmount * (result.input.loanInterestRate + result.input.loanRepaymentRate)),
       detail: `Zinsrate ${formatPercent(result.input.loanInterestRate * 100)} + Tilgungsrate ${formatPercent(result.input.loanRepaymentRate * 100)} auf ${formatCurrency(result.input.loanAmount)}`,
+      loanOnly: true,
     },
     {
       title: "Mieteinnahmen p.a.",
@@ -1051,29 +1080,34 @@ export default function Home() {
       detail: result.deferredPurchase && result.purchaseYear === null
         ? "Immobilie nicht erworben im Betrachtungszeitraum – keine Mieteinnahmen"
         : `${formatCurrency(result.input.monthlyRent)} pro Monat${result.deferredPurchase && result.purchaseYear !== null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
+      realEstateOnly: true,
     },
     {
       title: "AfA p.a.",
       value: formatCurrency(result.annualDepreciationBase),
       detail: `${formatPercent(result.input.depreciationRate * 100)} auf ${formatCurrency(result.depreciableBuildingBase)}${result.deferredPurchase && result.purchaseYear !== null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
+      realEstateOnly: true,
     },
-    result.deferredPurchase
-      ? {
-          title: result.purchaseYear !== null
-            ? `Stiftung: Immobilienkauf in Jahr ${result.purchaseYear}`
-            : "Stiftung: Immobilienkauf – nicht im Betrachtungszeitraum",
-          value: result.purchaseYear !== null
-            ? formatCurrency(result.propertyValue + result.realEstateTax)
-            : "–",
-          detail: result.purchaseYear !== null
-            ? `ETF-Phase bis Jahr ${result.purchaseYear - 1}; Kaufpreis ${formatCurrency(result.propertyValue)} + GrESt ${formatCurrency(result.realEstateTax)}`
-            : `ETF wächst auf ${formatCurrency(result.rows[result.rows.length - 1]?.foundationEtfLiquidationValue ?? 0)} (Liquidationswert Jahr ${result.input.projectionYears})`,
-        }
-      : {
-          title: "Stiftung: Startliquidität nach Ankauf",
-          value: formatCurrency(result.initialCash),
-          detail: "Jahr 0 vor laufender Bewirtschaftung",
-        },
+    {
+      ...(result.deferredPurchase
+        ? {
+            title: result.purchaseYear !== null
+              ? `Stiftung: Immobilienkauf in Jahr ${result.purchaseYear}`
+              : "Stiftung: Immobilienkauf – nicht im Betrachtungszeitraum",
+            value: result.purchaseYear !== null
+              ? formatCurrency(result.propertyValue + result.realEstateTax)
+              : "–",
+            detail: result.purchaseYear !== null
+              ? `ETF-Phase bis Jahr ${result.purchaseYear - 1}; Kaufpreis ${formatCurrency(result.propertyValue)} + GrESt ${formatCurrency(result.realEstateTax)}`
+              : `ETF wächst auf ${formatCurrency(result.rows[result.rows.length - 1]?.foundationEtfLiquidationValue ?? 0)} (Liquidationswert Jahr ${result.input.projectionYears})`,
+          }
+        : {
+            title: "Stiftung: Startliquidität nach Ankauf",
+            value: formatCurrency(result.initialCash),
+            detail: "Jahr 0 vor laufender Bewirtschaftung",
+          }),
+      realEstateOnly: true,
+    },
     {
       title: "Stiftung: Nettovermögen Jahr 1",
       value: formatCurrency(firstYear.foundationWealth),
@@ -1090,13 +1124,16 @@ export default function Home() {
       title: `Person: Vermögensposition Jahr ${result.input.projectionYears}`,
       value: formatCurrency(lastYear.personAssetPosition),
       detail: `Persönlicher Steuersatz ${formatPercent(lastYear.personalTaxRate * 100)}, ETF-Rendite ${formatPercent(result.input.etfReturnRate * 100)}, ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}, Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}`,
+      loanOnly: true,
     },
     {
-      title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (Privatvermietung)`,
+      title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (${compareScenarioLabel})`,
       value: formatCurrency(lastYear.compareWealth),
-      detail: `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
+      detail: includeRealEstate
+        ? `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
+        : `Ohne Stiftung, Kapital direkt in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
     },
-  ];
+  ].filter((card) => (!card.realEstateOnly || includeRealEstate) && (!card.loanOnly || result.input.loanAmount > 0));
 
   const wealthChart = useMemo(() => {
     if (result.rows.length === 0) {
@@ -1129,7 +1166,9 @@ export default function Home() {
     const innerHeight = chartHeight - margin.top - margin.bottom;
     const maxIndex = Math.max(1, result.rows.length - 1);
 
-    const series = [
+    const compareSeriesLabel = `Vergleich: ${compareScenarioLabel} (ohne Stiftung)`;
+
+    const allSeries = [
       {
         id: "foundation",
         label: "Stiftung",
@@ -1147,6 +1186,7 @@ export default function Home() {
           year: row.year,
           value: row.personAssetPosition,
         })),
+        loanOnly: true,
       },
       {
         id: "total",
@@ -1156,10 +1196,11 @@ export default function Home() {
           year: row.year,
           value: row.foundationWealth + row.personAssetPosition,
         })),
+        loanOnly: true,
       },
       {
         id: "compare",
-        label: "Vergleich: Privatvermietung (ohne Stiftung)",
+        label: compareSeriesLabel,
         color: "#ea580c",
         values: result.rows.map((row) => ({
           year: row.year,
@@ -1167,6 +1208,7 @@ export default function Home() {
         })),
       },
     ];
+    const series = allSeries.filter((s) => (!s.realEstateOnly || includeRealEstate) && (!s.loanOnly || result.input.loanAmount > 0));
 
     const allValues = series.flatMap((line) => line.values.map((entry) => entry.value));
     const minValue = Math.min(CHART_MIN_VALUE_FLOOR, ...allValues);
@@ -1230,7 +1272,7 @@ export default function Home() {
       xTicks,
       breakEven,
     };
-  }, [result.rows]);
+  }, [result.rows, result.input.loanAmount, includeRealEstate, compareScenarioLabel]);
 
   function handleFieldChange(fieldId, value) {
     setState((currentState) => {
@@ -1238,7 +1280,7 @@ export default function Home() {
         ...currentState.formValues,
         [fieldId]: value,
       };
-      const nextValidation = validateFormValues(nextFormValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
 
       return {
@@ -1251,7 +1293,7 @@ export default function Home() {
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
-                currentState.comparePaysRealEstateTax,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
             )
           : currentState.result,
@@ -1261,7 +1303,7 @@ export default function Home() {
 
   function handleRelationshipChange(nextRelationshipId) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(currentState.formValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       return {
@@ -1274,7 +1316,7 @@ export default function Home() {
                 nextRelationship,
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
-                currentState.comparePaysRealEstateTax,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
             )
           : currentState.result,
@@ -1284,7 +1326,7 @@ export default function Home() {
 
   function handleSurplusToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(currentState.formValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1306,7 +1348,7 @@ export default function Home() {
 
   function handleCompareRealEstateTaxToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(currentState.formValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1326,13 +1368,35 @@ export default function Home() {
     });
   }
 
+  function handleIncludeRealEstateToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, checked));
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        includeRealEstate: checked,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                checked ? currentState.comparePaysRealEstateTax : false,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
   function handleBundeslandChange(name) {
     const bl = BUNDESLAENDER.find((b) => b.name === name) ?? null;
     setState((currentState) => {
       const nextFormValues = bl
         ? { ...currentState.formValues, realEstateTaxRate: String(bl.rate) }
         : currentState.formValues;
-      const nextValidation = validateFormValues(nextFormValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1345,7 +1409,7 @@ export default function Home() {
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
-                currentState.comparePaysRealEstateTax,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
             )
           : currentState.result,
@@ -1358,7 +1422,7 @@ export default function Home() {
       const nextSteps = currentState.personalTaxSteps.map((step, i) =>
         i === index ? { ...step, [field]: value } : step,
       );
-      const nextValidation = validateFormValues(currentState.formValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -1370,7 +1434,7 @@ export default function Home() {
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
-                currentState.comparePaysRealEstateTax,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
             )
           : currentState.result,
@@ -1384,7 +1448,7 @@ export default function Home() {
       const lastFromYear = parseNumber(String(lastStep?.fromYear ?? "0")) ?? 0;
       const newStep = { fromYear: String(lastFromYear + 1), rate: lastStep?.rate ?? "42" };
       const nextSteps = [...currentState.personalTaxSteps, newStep];
-      const nextValidation = validateFormValues(currentState.formValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -1396,7 +1460,7 @@ export default function Home() {
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
-                currentState.comparePaysRealEstateTax,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
             )
           : currentState.result,
@@ -1408,7 +1472,7 @@ export default function Home() {
     setState((currentState) => {
       if (currentState.personalTaxSteps.length <= 1) return currentState;
       const nextSteps = currentState.personalTaxSteps.filter((_, i) => i !== index);
-      const nextValidation = validateFormValues(currentState.formValues);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -1420,7 +1484,7 @@ export default function Home() {
                 getRelationshipOption(currentState.relationshipId),
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
-                currentState.comparePaysRealEstateTax,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
             )
           : currentState.result,
@@ -1487,26 +1551,41 @@ export default function Home() {
               Für die Erstausstattung gilt die günstigste Steuerklasse aus dem Kreis der Begünstigten; Schenkungssteuersatz und pauschaler Freibetrag werden daraus abgeleitet.
             </p>
           </fieldset>
-          <div className={styles.bundeslandRow}>
-            <label htmlFor="bundesland" className={styles.fieldLabel}>
-              Bundesland (setzt Grunderwerbsteuer-Satz)
+          <div className={styles.checkboxRow}>
+            <input
+              id="includeRealEstate"
+              type="checkbox"
+              checked={includeRealEstate}
+              onChange={(event) => handleIncludeRealEstateToggle(event.target.checked)}
+              className={styles.checkbox}
+            />
+            <label htmlFor="includeRealEstate" className={styles.checkboxLabel}>
+              Immobilie in die Rechnung einbeziehen
             </label>
-            <select
-              id="bundesland"
-              value={bundesland ?? ""}
-              onChange={(event) => handleBundeslandChange(event.target.value)}
-              className={styles.fieldInput}
-            >
-              <option value="">— Manuell eingeben —</option>
-              {BUNDESLAENDER.map((bl) => (
-                <option key={bl.name} value={bl.name}>
-                  {bl.name} ({bl.rate} %)
-                </option>
-              ))}
-            </select>
           </div>
+          {includeRealEstate && (
+            <div className={styles.bundeslandRow}>
+              <label htmlFor="bundesland" className={styles.fieldLabel}>
+                Bundesland (setzt Grunderwerbsteuer-Satz)
+              </label>
+              <select
+                id="bundesland"
+                value={bundesland ?? ""}
+                onChange={(event) => handleBundeslandChange(event.target.value)}
+                className={styles.fieldInput}
+              >
+                <option value="">— Manuell eingeben —</option>
+                {BUNDESLAENDER.map((bl) => (
+                  <option key={bl.name} value={bl.name}>
+                    {bl.name} ({bl.rate} %)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className={styles.grid}>
             {FIELD_DEFINITIONS.map((field) => {
+              if (field.realEstate && !includeRealEstate) return null;
               const isInvalid = validation.invalidIds.includes(field.id);
 
               return (
@@ -1608,18 +1687,20 @@ export default function Home() {
               Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
             </label>
           </div>
-          <div className={styles.checkboxRow}>
-            <input
-              id="comparePaysRealEstateTax"
-              type="checkbox"
-              checked={comparePaysRealEstateTax}
-              onChange={(event) => handleCompareRealEstateTaxToggle(event.target.checked)}
-              className={styles.checkbox}
-            />
-            <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
-              Vergleichsvermögen zahlt Grunderwerbsteuer
-            </label>
-          </div>
+          {includeRealEstate && (
+            <div className={styles.checkboxRow}>
+              <input
+                id="comparePaysRealEstateTax"
+                type="checkbox"
+                checked={comparePaysRealEstateTax}
+                onChange={(event) => handleCompareRealEstateTaxToggle(event.target.checked)}
+                className={styles.checkbox}
+              />
+              <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
+                Vergleichsvermögen zahlt Grunderwerbsteuer
+              </label>
+            </div>
+          )}
           <p className={styles.hint}>
             Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom
             ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige

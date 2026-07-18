@@ -25,7 +25,6 @@ const FIELD_DEFINITIONS = [
     min: 0,
     step: "1000",
     defaultValue: 300000,
-    realEstate: true,
   },
   {
     id: "loanInterestRate",
@@ -33,7 +32,6 @@ const FIELD_DEFINITIONS = [
     min: 0,
     step: "0.1",
     defaultValue: 3,
-    realEstate: true,
   },
   {
     id: "loanRepaymentRate",
@@ -41,7 +39,6 @@ const FIELD_DEFINITIONS = [
     min: 0,
     step: "0.1",
     defaultValue: 2,
-    realEstate: true,
   },
   {
     id: "buildingValue",
@@ -969,7 +966,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 nextRelationship,
-                nextIncludeRealEstate ? nextSurplusToRepayment : false,
+                nextSurplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 nextIncludeRealEstate ? nextComparePaysRealEstateTax : false,
               ),
@@ -1075,7 +1072,7 @@ export default function Home() {
         : "Annuitätsdarlehen (Jahr 1)",
       value: formatCurrency(result.input.loanAmount * (result.input.loanInterestRate + result.input.loanRepaymentRate)),
       detail: `Zinsrate ${formatPercent(result.input.loanInterestRate * 100)} + Tilgungsrate ${formatPercent(result.input.loanRepaymentRate * 100)} auf ${formatCurrency(result.input.loanAmount)}`,
-      realEstateOnly: true,
+      loanOnly: true,
     },
     {
       title: "Mieteinnahmen p.a.",
@@ -1127,7 +1124,7 @@ export default function Home() {
       title: `Person: Vermögensposition Jahr ${result.input.projectionYears}`,
       value: formatCurrency(lastYear.personAssetPosition),
       detail: `Persönlicher Steuersatz ${formatPercent(lastYear.personalTaxRate * 100)}, ETF-Rendite ${formatPercent(result.input.etfReturnRate * 100)}, ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}, Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}`,
-      realEstateOnly: true,
+      loanOnly: true,
     },
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (${compareScenarioLabel})`,
@@ -1136,7 +1133,7 @@ export default function Home() {
         ? `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
         : `Ohne Stiftung, Kapital direkt in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
     },
-  ].filter((card) => !card.realEstateOnly || includeRealEstate);
+  ].filter((card) => (!card.realEstateOnly || includeRealEstate) && (!card.loanOnly || result.input.loanAmount > 0));
 
   const wealthChart = useMemo(() => {
     if (result.rows.length === 0) {
@@ -1189,7 +1186,7 @@ export default function Home() {
           year: row.year,
           value: row.personAssetPosition,
         })),
-        realEstateOnly: true,
+        loanOnly: true,
       },
       {
         id: "total",
@@ -1199,7 +1196,7 @@ export default function Home() {
           year: row.year,
           value: row.foundationWealth + row.personAssetPosition,
         })),
-        realEstateOnly: true,
+        loanOnly: true,
       },
       {
         id: "compare",
@@ -1211,7 +1208,7 @@ export default function Home() {
         })),
       },
     ];
-    const series = allSeries.filter((s) => !s.realEstateOnly || includeRealEstate);
+    const series = allSeries.filter((s) => (!s.realEstateOnly || includeRealEstate) && (!s.loanOnly || result.input.loanAmount > 0));
 
     const allValues = series.flatMap((line) => line.values.map((entry) => entry.value));
     const minValue = Math.min(CHART_MIN_VALUE_FLOOR, ...allValues);
@@ -1275,7 +1272,7 @@ export default function Home() {
       xTicks,
       breakEven,
     };
-  }, [result.rows, includeRealEstate]);
+  }, [result.rows, result.input.loanAmount, includeRealEstate, compareScenarioLabel]);
 
   function handleFieldChange(fieldId, value) {
     setState((currentState) => {
@@ -1294,7 +1291,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
-                currentState.includeRealEstate ? currentState.surplusToRepayment : false,
+                currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
@@ -1317,7 +1314,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 nextRelationship,
-                currentState.includeRealEstate ? currentState.surplusToRepayment : false,
+                currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
@@ -1383,7 +1380,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
-                checked ? currentState.surplusToRepayment : false,
+                currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 checked ? currentState.comparePaysRealEstateTax : false,
               ),
@@ -1410,7 +1407,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
-                currentState.includeRealEstate ? currentState.surplusToRepayment : false,
+                currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
@@ -1435,7 +1432,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
-                currentState.includeRealEstate ? currentState.surplusToRepayment : false,
+                currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
@@ -1461,7 +1458,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
-                currentState.includeRealEstate ? currentState.surplusToRepayment : false,
+                currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
@@ -1485,7 +1482,7 @@ export default function Home() {
               createProjectionInput(
                 nextValidation.input,
                 getRelationshipOption(currentState.relationshipId),
-                currentState.includeRealEstate ? currentState.surplusToRepayment : false,
+                currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
               ),
@@ -1678,33 +1675,31 @@ export default function Home() {
               die zuletzt gültigen Ergebnisse sichtbar.
             </p>
           ) : null}
+          <div className={styles.checkboxRow}>
+            <input
+              id="surplusToRepayment"
+              type="checkbox"
+              checked={surplusToRepayment}
+              onChange={(event) => handleSurplusToggle(event.target.checked)}
+              className={styles.checkbox}
+            />
+            <label htmlFor="surplusToRepayment" className={styles.checkboxLabel}>
+              Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
+            </label>
+          </div>
           {includeRealEstate && (
-            <>
-              <div className={styles.checkboxRow}>
-                <input
-                  id="surplusToRepayment"
-                  type="checkbox"
-                  checked={surplusToRepayment}
-                  onChange={(event) => handleSurplusToggle(event.target.checked)}
-                  className={styles.checkbox}
-                />
-                <label htmlFor="surplusToRepayment" className={styles.checkboxLabel}>
-                  Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
-                </label>
-              </div>
-              <div className={styles.checkboxRow}>
-                <input
-                  id="comparePaysRealEstateTax"
-                  type="checkbox"
-                  checked={comparePaysRealEstateTax}
-                  onChange={(event) => handleCompareRealEstateTaxToggle(event.target.checked)}
-                  className={styles.checkbox}
-                />
-                <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
-                  Vergleichsvermögen zahlt Grunderwerbsteuer
-                </label>
-              </div>
-            </>
+            <div className={styles.checkboxRow}>
+              <input
+                id="comparePaysRealEstateTax"
+                type="checkbox"
+                checked={comparePaysRealEstateTax}
+                onChange={(event) => handleCompareRealEstateTaxToggle(event.target.checked)}
+                className={styles.checkbox}
+              />
+              <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
+                Vergleichsvermögen zahlt Grunderwerbsteuer
+              </label>
+            </div>
           )}
           <p className={styles.hint}>
             Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom

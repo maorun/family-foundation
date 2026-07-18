@@ -1128,13 +1128,18 @@ export default function Home() {
       loanOnly: true,
     },
     ...(result.input.bulletLoan && bulletLoanShowReturn ? (() => {
+      const loanFullyRepaid = result.input.loanTermYears <= result.input.projectionYears;
       const termYear = Math.min(result.input.loanTermYears, result.input.projectionYears);
       const termRow = result.rows.find((r) => r.year === termYear) ?? lastYear;
-      const netReturn = result.input.loanAmount + termRow.personCumulativeGrossInterest - termRow.personCumulativeInterestTax;
+      const netReturn = (loanFullyRepaid ? result.input.loanAmount : 0) + termRow.personCumulativeGrossInterest - termRow.personCumulativeInterestTax;
       return [{
-        title: `Endfälliges Darlehen: Netto-Gesamtrückfluss (Jahr ${termYear})`,
+        title: loanFullyRepaid
+          ? `Endfälliges Darlehen: Netto-Gesamtrückfluss (Jahr ${termYear})`
+          : `Endfälliges Darlehen: Netto-Zwischenbilanz (Jahr ${termYear}, Laufzeit endet erst Jahr ${result.input.loanTermYears})`,
         value: formatCurrency(netReturn),
-        detail: `${formatCurrency(result.input.loanAmount)} (Kapital) + ${formatCurrency(termRow.personCumulativeGrossInterest)} (Zinsen) − ${formatCurrency(termRow.personCumulativeInterestTax)} (Steuer auf Zinsen)`,
+        detail: loanFullyRepaid
+          ? `${formatCurrency(result.input.loanAmount)} (Kapitalrückzahlung) + ${formatCurrency(termRow.personCumulativeGrossInterest)} (kum. Zinsen) − ${formatCurrency(termRow.personCumulativeInterestTax)} (kum. Steuer auf Zinsen)`
+          : `Achtung: Laufzeitende (Jahr ${result.input.loanTermYears}) liegt außerhalb des Betrachtungszeitraums – Kapital noch nicht zurückgezahlt. ${formatCurrency(termRow.personCumulativeGrossInterest)} (kum. Zinsen bis Jahr ${termYear}) − ${formatCurrency(termRow.personCumulativeInterestTax)} (kum. Steuer auf Zinsen)`,
         loanOnly: true,
       }];
     })() : []),
@@ -2124,10 +2129,16 @@ export default function Home() {
                           <div className={styles.dataItem}>
                             <dt>Kumulierter Netto-Rückfluss (endfälliges Darlehen)</dt>
                             <dd className={styles.positive}>
-                              {formatCurrency(result.input.loanAmount + row.personCumulativeGrossInterest - row.personCumulativeInterestTax)}
+                              {formatCurrency(
+                                (row.remainingLoan === 0 ? result.input.loanAmount : 0) +
+                                row.personCumulativeGrossInterest - row.personCumulativeInterestTax
+                              )}
                             </dd>
                             <small className={styles.formula}>
-                              {formatCurrency(result.input.loanAmount)} (Kapital) + {formatCurrency(row.personCumulativeGrossInterest)} (kum. Zinsen) − {formatCurrency(row.personCumulativeInterestTax)} (kum. Steuer auf Zinsen)
+                              {row.remainingLoan === 0
+                                ? `${formatCurrency(result.input.loanAmount)} (Kapitalrückzahlung) + `
+                                : `Kapital (${formatCurrency(result.input.loanAmount)}) noch ausstehend + `}
+                              {formatCurrency(row.personCumulativeGrossInterest)} (kum. Zinsen) − {formatCurrency(row.personCumulativeInterestTax)} (kum. Steuer auf Zinsen)
                             </small>
                           </div>
                         )}

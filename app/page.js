@@ -41,6 +41,16 @@ const FIELD_DEFINITIONS = [
     defaultValue: 2,
   },
   {
+    id: "loanTermYears",
+    label: "Laufzeit des Darlehens (Jahre)",
+    min: 1,
+    max: 200,
+    step: "1",
+    integer: true,
+    defaultValue: 10,
+    conditionalField: "bulletLoan",
+  },
+  {
     id: "buildingValue",
     label: "Gebäudewert (€)",
     min: 0,
@@ -245,25 +255,28 @@ function parseNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function validateFormValues(formValues) {
+function validateFormValues(formValues, bulletLoan = false) {
   const invalidIds = [];
   const parsedValues = {};
 
   for (const field of FIELD_DEFINITIONS) {
-    const parsedValue = parseNumber(formValues[field.id] ?? "");
+    // For conditional fields where condition is not met, substitute the default value
+    const useDefault = field.conditionalField === "bulletLoan" && !bulletLoan;
+    const rawValue = useDefault ? String(field.defaultValue) : (formValues[field.id] ?? "");
+    const parsedValue = parseNumber(rawValue);
 
     if (parsedValue === null) {
-      invalidIds.push(field.id);
+      if (!useDefault) invalidIds.push(field.id);
       continue;
     }
 
     if (parsedValue < field.min || (field.max !== undefined && parsedValue > field.max)) {
-      invalidIds.push(field.id);
+      if (!useDefault) invalidIds.push(field.id);
       continue;
     }
 
     if (field.integer && !Number.isInteger(parsedValue)) {
-      invalidIds.push(field.id);
+      if (!useDefault) invalidIds.push(field.id);
       continue;
     }
 
@@ -282,6 +295,7 @@ function validateFormValues(formValues) {
       loanAmount: parsedValues.loanAmount,
       loanInterestRate: parsedValues.loanInterestRate / 100,
       loanRepaymentRate: parsedValues.loanRepaymentRate / 100,
+      loanTermYears: parsedValues.loanTermYears,
       buildingValue: parsedValues.buildingValue,
       landValue: parsedValues.landValue,
       realEstateTaxRate: parsedValues.realEstateTaxRate / 100,
@@ -355,6 +369,7 @@ function createProjectionInput(
   surplusToRepayment,
   personalTaxSteps,
   comparePaysRealEstateTax,
+  bulletLoan = false,
 ) {
   return {
     ...validatedInput,
@@ -363,6 +378,7 @@ function createProjectionInput(
     surplusToRepayment,
     personalTaxSteps,
     comparePaysRealEstateTax,
+    bulletLoan,
   };
 }
 
@@ -505,6 +521,10 @@ function calculateProjection(input) {
   let erbsCurrentInstallment = 0;
   let erbsCurrentCycleAmount = 0;
 
+  // Kumulierte Zinsen/Steuer der darlehensgebenden Person (für endfälliges Darlehen)
+  let personCumulativeGrossInterest = 0;
+  let personCumulativeInterestTax = 0;
+
   // Vergleichsszenario: Privatvermietung ohne Stiftung
   // Kein Schenkungssteuerabzug, Mieteinnahmen zum persönlichen Steuersatz besteuert,
   // kein Darlehen, keine Verwaltungskosten
@@ -559,6 +579,8 @@ function calculateProjection(input) {
       etfSaleForPurchase: 0,
       etfSaleTaxForPurchase: 0,
       etfSaleNetForPurchase: 0,
+      personCumulativeGrossInterest: 0,
+      personCumulativeInterestTax: 0,
     },
   ];
 
@@ -628,10 +650,6 @@ function calculateProjection(input) {
 
     if (foundationOwnsProperty) {
       annualInterest = remainingLoan * input.loanInterestRate;
-      scheduledRepaymentTarget = Math.min(
-        remainingLoan,
-        input.loanAmount * input.loanRepaymentRate,
-      );
       annualDepreciation = Math.min(
         remainingDepreciableBuildingValue,
         depreciableBuildingBase * input.depreciationRate,
@@ -648,20 +666,34 @@ function calculateProjection(input) {
         input.annualAdminCost -
         annualInterest;
       const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
-      // Business rule: normal repayment is always paid each year, even with negative cash.
-      scheduledRepayment = scheduledRepaymentTarget;
 
-      // Jährlichen Überschuss als Sondertilgung verwenden
-      extraRepayment = input.surplusToRepayment
-        ? Math.min(
-            Math.max(0, availableCashBeforeRepayment - scheduledRepayment),
-            remainingLoan - scheduledRepayment,
-          )
-        : 0;
+      if (input.bulletLoan) {
+        // Endfälliges Darlehen: kein Tilgungsplan, volle Rückzahlung am Laufzeitende
+        scheduledRepaymentTarget = year === input.loanTermYears ? remainingLoan : 0;
+        scheduledRepayment = scheduledRepaymentTarget;
+        extraRepayment = 0;
+      } else {
+        scheduledRepaymentTarget = Math.min(
+          remainingLoan,
+          input.loanAmount * input.loanRepaymentRate,
+        );
+        // Business rule: normal repayment is always paid each year, even with negative cash.
+        scheduledRepayment = scheduledRepaymentTarget;
+        // Jährlichen Überschuss als Sondertilgung verwenden
+        extraRepayment = input.surplusToRepayment
+          ? Math.min(
+              Math.max(0, availableCashBeforeRepayment - scheduledRepayment),
+              remainingLoan - scheduledRepayment,
+            )
+          : 0;
+      }
 
       lenderTax = annualInterest * yearPersonalTaxRate;
       lenderNetCashFlow =
         scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
+
+      personCumulativeGrossInterest += annualInterest;
+      personCumulativeInterestTax += lenderTax;
 
       foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
       remainingLoan -= scheduledRepayment + extraRepayment;
@@ -854,6 +886,8 @@ function calculateProjection(input) {
       etfSaleForPurchase,
       etfSaleTaxForPurchase,
       etfSaleNetForPurchase,
+      personCumulativeGrossInterest,
+      personCumulativeInterestTax,
     });
   }
 
@@ -880,7 +914,7 @@ function calculateProjection(input) {
 
 const DEFAULT_RESULT = calculateProjection({
   ...createProjectionInput(
-    validateFormValues(getEffectiveFormValues(DEFAULT_FORM_VALUES, false)).input,
+    validateFormValues(getEffectiveFormValues(DEFAULT_FORM_VALUES, false), false).input,
     getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
     false,
     validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS).parsedSteps,
@@ -919,6 +953,8 @@ export default function Home() {
       personalTaxSteps,
       selectedOverviewYear,
       includeRealEstate,
+      bulletLoan,
+      bulletLoanShowReturn,
       result,
     },
     setState,
@@ -931,6 +967,8 @@ export default function Home() {
     personalTaxSteps: DEFAULT_PERSONAL_TAX_STEPS,
     selectedOverviewYear: "all",
     includeRealEstate: false,
+    bulletLoan: false,
+    bulletLoanShowReturn: false,
     result: DEFAULT_RESULT,
   });
 
@@ -948,7 +986,9 @@ export default function Home() {
       const nextPersonalTaxSteps = parsed.personalTaxSteps ?? DEFAULT_PERSONAL_TAX_STEPS;
       const nextSelectedOverviewYear = parsed.selectedOverviewYear ?? "all";
       const nextIncludeRealEstate = parsed.includeRealEstate ?? false;
-      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, nextIncludeRealEstate));
+      const nextBulletLoan = parsed.bulletLoan ?? false;
+      const nextBulletLoanShowReturn = parsed.bulletLoanShowReturn ?? false;
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, nextIncludeRealEstate), nextBulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextPersonalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -961,6 +1001,8 @@ export default function Home() {
         personalTaxSteps: nextPersonalTaxSteps,
         selectedOverviewYear: nextSelectedOverviewYear,
         includeRealEstate: nextIncludeRealEstate,
+        bulletLoan: nextBulletLoan,
+        bulletLoanShowReturn: nextBulletLoanShowReturn,
         result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
@@ -969,6 +1011,7 @@ export default function Home() {
                 nextSurplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 nextIncludeRealEstate ? nextComparePaysRealEstateTax : false,
+                nextBulletLoan,
               ),
             )
           : DEFAULT_RESULT,
@@ -993,6 +1036,8 @@ export default function Home() {
             personalTaxSteps,
             selectedOverviewYear,
             includeRealEstate,
+            bulletLoan,
+            bulletLoanShowReturn,
           }),
         );
       } catch {
@@ -1009,11 +1054,13 @@ export default function Home() {
     personalTaxSteps,
     selectedOverviewYear,
     includeRealEstate,
+    bulletLoan,
+    bulletLoanShowReturn,
   ]);
 
   const validation = useMemo(
-    () => validateFormValues(getEffectiveFormValues(formValues, includeRealEstate)),
-    [formValues, includeRealEstate],
+    () => validateFormValues(getEffectiveFormValues(formValues, includeRealEstate), bulletLoan),
+    [formValues, includeRealEstate, bulletLoan],
   );
   const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
   const hasInvalidFields = validation.invalidIds.length > 0;
@@ -1067,13 +1114,30 @@ export default function Home() {
       realEstateOnly: true,
     },
     {
-      title: result.deferredPurchase
-        ? `Annuitätsdarlehen (ab Immobilienkauf${result.purchaseYear !== null ? ` Jahr ${result.purchaseYear}` : ""})`
-        : "Annuitätsdarlehen (Jahr 1)",
-      value: formatCurrency(result.input.loanAmount * (result.input.loanInterestRate + result.input.loanRepaymentRate)),
-      detail: `Zinsrate ${formatPercent(result.input.loanInterestRate * 100)} + Tilgungsrate ${formatPercent(result.input.loanRepaymentRate * 100)} auf ${formatCurrency(result.input.loanAmount)}`,
+      title: result.input.bulletLoan
+        ? `Endfälliges Darlehen (${result.input.loanTermYears} Jahre)`
+        : (result.deferredPurchase
+            ? `Annuitätsdarlehen (ab Immobilienkauf${result.purchaseYear !== null ? ` Jahr ${result.purchaseYear}` : ""})`
+            : "Annuitätsdarlehen (Jahr 1)"),
+      value: result.input.bulletLoan
+        ? formatCurrency(result.input.loanAmount * result.input.loanInterestRate)
+        : formatCurrency(result.input.loanAmount * (result.input.loanInterestRate + result.input.loanRepaymentRate)),
+      detail: result.input.bulletLoan
+        ? `Zinszahlung p.a.: ${formatPercent(result.input.loanInterestRate * 100)} auf ${formatCurrency(result.input.loanAmount)}, Rückzahlung in Jahr ${result.input.loanTermYears}`
+        : `Zinsrate ${formatPercent(result.input.loanInterestRate * 100)} + Tilgungsrate ${formatPercent(result.input.loanRepaymentRate * 100)} auf ${formatCurrency(result.input.loanAmount)}`,
       loanOnly: true,
     },
+    ...(result.input.bulletLoan && bulletLoanShowReturn ? (() => {
+      const termYear = Math.min(result.input.loanTermYears, result.input.projectionYears);
+      const termRow = result.rows.find((r) => r.year === termYear) ?? lastYear;
+      const netReturn = result.input.loanAmount + termRow.personCumulativeGrossInterest - termRow.personCumulativeInterestTax;
+      return [{
+        title: `Endfälliges Darlehen: Netto-Gesamtrückfluss (Jahr ${termYear})`,
+        value: formatCurrency(netReturn),
+        detail: `${formatCurrency(result.input.loanAmount)} (Kapital) + ${formatCurrency(termRow.personCumulativeGrossInterest)} (Zinsen) − ${formatCurrency(termRow.personCumulativeInterestTax)} (Steuer auf Zinsen)`,
+        loanOnly: true,
+      }];
+    })() : []),
     {
       title: "Mieteinnahmen p.a.",
       value: formatCurrency(result.annualRent),
@@ -1280,7 +1344,7 @@ export default function Home() {
         ...currentState.formValues,
         [fieldId]: value,
       };
-      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
 
       return {
@@ -1294,6 +1358,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1303,7 +1368,7 @@ export default function Home() {
 
   function handleRelationshipChange(nextRelationshipId) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       return {
@@ -1317,6 +1382,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1326,7 +1392,7 @@ export default function Home() {
 
   function handleSurplusToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1339,6 +1405,7 @@ export default function Home() {
                 checked,
                 nextTaxValidation.parsedSteps,
                 currentState.comparePaysRealEstateTax,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1348,7 +1415,7 @@ export default function Home() {
 
   function handleCompareRealEstateTaxToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1361,6 +1428,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 checked,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1370,7 +1438,7 @@ export default function Home() {
 
   function handleIncludeRealEstateToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, checked));
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, checked), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1383,6 +1451,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 checked ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1396,7 +1465,7 @@ export default function Home() {
       const nextFormValues = bl
         ? { ...currentState.formValues, realEstateTaxRate: String(bl.rate) }
         : currentState.formValues;
-      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1410,6 +1479,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1422,7 +1492,7 @@ export default function Home() {
       const nextSteps = currentState.personalTaxSteps.map((step, i) =>
         i === index ? { ...step, [field]: value } : step,
       );
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -1435,6 +1505,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1448,7 +1519,7 @@ export default function Home() {
       const lastFromYear = parseNumber(String(lastStep?.fromYear ?? "0")) ?? 0;
       const newStep = { fromYear: String(lastFromYear + 1), rate: lastStep?.rate ?? "42" };
       const nextSteps = [...currentState.personalTaxSteps, newStep];
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -1461,6 +1532,7 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
@@ -1472,7 +1544,7 @@ export default function Home() {
     setState((currentState) => {
       if (currentState.personalTaxSteps.length <= 1) return currentState;
       const nextSteps = currentState.personalTaxSteps.filter((_, i) => i !== index);
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate));
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -1485,11 +1557,44 @@ export default function Home() {
                 currentState.surplusToRepayment,
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
               ),
             )
           : currentState.result,
       };
     });
+  }
+
+  function handleBulletLoanToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), checked);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        bulletLoan: checked,
+        // When switching off bullet loan, also reset show-return
+        bulletLoanShowReturn: checked ? currentState.bulletLoanShowReturn : false,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                checked,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleBulletLoanShowReturnToggle(checked) {
+    setState((currentState) => ({
+      ...currentState,
+      bulletLoanShowReturn: checked,
+    }));
   }
 
   function handleOverviewYearChange(value) {
@@ -1586,6 +1691,8 @@ export default function Home() {
           <div className={styles.grid}>
             {FIELD_DEFINITIONS.map((field) => {
               if (field.realEstate && !includeRealEstate) return null;
+              if (field.id === "loanRepaymentRate" && bulletLoan) return null;
+              if (field.conditionalField === "bulletLoan" && !bulletLoan) return null;
               const isInvalid = validation.invalidIds.includes(field.id);
 
               return (
@@ -1677,16 +1784,44 @@ export default function Home() {
           ) : null}
           <div className={styles.checkboxRow}>
             <input
-              id="surplusToRepayment"
+              id="bulletLoan"
               type="checkbox"
-              checked={surplusToRepayment}
-              onChange={(event) => handleSurplusToggle(event.target.checked)}
+              checked={bulletLoan}
+              onChange={(event) => handleBulletLoanToggle(event.target.checked)}
               className={styles.checkbox}
             />
-            <label htmlFor="surplusToRepayment" className={styles.checkboxLabel}>
-              Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
+            <label htmlFor="bulletLoan" className={styles.checkboxLabel}>
+              Endfälliges Darlehen (keine laufende Tilgung, volle Rückzahlung am Laufzeitende)
             </label>
           </div>
+          {bulletLoan && (
+            <div className={styles.checkboxRow}>
+              <input
+                id="bulletLoanShowReturn"
+                type="checkbox"
+                checked={bulletLoanShowReturn}
+                onChange={(event) => handleBulletLoanShowReturnToggle(event.target.checked)}
+                className={styles.checkbox}
+              />
+              <label htmlFor="bulletLoanShowReturn" className={styles.checkboxLabel}>
+                Netto-Gesamtrückfluss anzeigen (Kapital + Zinsen − Steuer auf Zinsen)
+              </label>
+            </div>
+          )}
+          {!bulletLoan && (
+            <div className={styles.checkboxRow}>
+              <input
+                id="surplusToRepayment"
+                type="checkbox"
+                checked={surplusToRepayment}
+                onChange={(event) => handleSurplusToggle(event.target.checked)}
+                className={styles.checkbox}
+              />
+              <label htmlFor="surplusToRepayment" className={styles.checkboxLabel}>
+                Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
+              </label>
+            </div>
+          )}
           {includeRealEstate && (
             <div className={styles.checkboxRow}>
               <input
@@ -1702,9 +1837,10 @@ export default function Home() {
             </div>
           )}
           <p className={styles.hint}>
-            Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom
-            ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige
-            Restschuld an. Die Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle
+            {bulletLoan
+              ? `Endfälliges Darlehen: Während der Laufzeit (${result.input.loanTermYears} Jahre) werden nur Zinsen auf die volle Darlehenssumme gezahlt; die Tilgung erfolgt als Einmalzahlung am Laufzeitende.`
+              : "Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige Restschuld an."}{" "}
+            Die Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle
             30 Jahre auf Basis des Nettovermögens berechnet: 2 fiktive Kinder
             (Freibetrag je {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, vereinfachter
             Pauschalsatz {formatPercent(ERBERSATZ_TAX_RATE * 100)}). Die Zahlung
@@ -1984,6 +2120,17 @@ export default function Home() {
                           <dd>{formatCurrency(row.personAssetPosition)}</dd>
                           {row.year > 0 && <small className={styles.formula}>{formatCurrency(row.remainingLoan)} (Restdarlehen) + {formatCurrency(row.personCash)} (Kasse) + {formatCurrency(row.personEtfLiquidationValue)} (ETF nach Verkaufsteuer)</small>}
                         </div>
+                        {result.input.bulletLoan && bulletLoanShowReturn && row.year > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Kumulierter Netto-Rückfluss (endfälliges Darlehen)</dt>
+                            <dd className={styles.positive}>
+                              {formatCurrency(result.input.loanAmount + row.personCumulativeGrossInterest - row.personCumulativeInterestTax)}
+                            </dd>
+                            <small className={styles.formula}>
+                              {formatCurrency(result.input.loanAmount)} (Kapital) + {formatCurrency(row.personCumulativeGrossInterest)} (kum. Zinsen) − {formatCurrency(row.personCumulativeInterestTax)} (kum. Steuer auf Zinsen)
+                            </small>
+                          </div>
+                        )}
                       </dl>
                     </div>
                     <div className={styles.guvColumn}>
@@ -2068,6 +2215,15 @@ export default function Home() {
                             </dd>
                             <small className={styles.formula}>{formatCurrency(row.personGuvInterest)} (Zinserträge) − {formatCurrency(row.personGuvTax)} (Einkommensteuer)</small>
                           </div>
+                          {result.input.bulletLoan && row.scheduledRepayment > 0 && (
+                            <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
+                              <dt>Rückzahlung Darlehen (Laufzeitende)</dt>
+                              <dd className={styles.positive}>
+                                {formatCurrency(row.scheduledRepayment)}
+                              </dd>
+                              <small className={styles.formula}>Volle Tilgung des endfälligen Darlehens in Jahr {result.input.loanTermYears}</small>
+                            </div>
+                          )}
                         </dl>
                       </div>
                     </div>

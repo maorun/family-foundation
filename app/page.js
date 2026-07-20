@@ -730,7 +730,8 @@ function calculateProjection(input) {
           : 0;
       }
 
-      lenderTax = Math.max(0, annualInterest - input.saverAllowance) * yearPersonalTaxRate;
+      const interestAllowanceUsed = Math.min(annualInterest, input.saverAllowance);
+      lenderTax = (annualInterest - interestAllowanceUsed) * yearPersonalTaxRate;
       lenderNetCashFlow =
         scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
@@ -825,7 +826,8 @@ function calculateProjection(input) {
     foundationEtfContributions = foundationEtf.etfContributionsAfterInvestment;
     foundationEtfTaxedGains = foundationEtf.etfTaxedGainsAfterYear;
 
-    const personEtfSaverAllowance = Math.max(0, input.saverAllowance - annualInterest);
+    const interestAllowanceUsed = Math.min(annualInterest, input.saverAllowance);
+    const personEtfSaverAllowance = input.saverAllowance - interestAllowanceUsed;
     const personEtf = applyEtfYear({
       cash: personCash,
       etfBalance: personEtfBalance,

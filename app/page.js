@@ -441,15 +441,41 @@ function applyEtfYear({
   partialExemptionRate,
 }) {
   const taxableRatio = Math.max(0, 1 - partialExemptionRate);
-  const etfInvestment = Math.max(0, cash);
-  const cashAfterInvestment = cash - etfInvestment;
-  const etfBalanceAfterInvestment = etfBalance + etfInvestment;
-  const etfContributionsAfterInvestment = etfContributions + etfInvestment;
+  let currentCash = cash;
+  let currentEtfBalance = etfBalance;
+  let currentEtfContributions = etfContributions;
+  let currentEtfTaxedGains = etfTaxedGains;
+  let etfDeficitSaleGross = 0;
+  let etfDeficitSaleTax = 0;
+  let etfDeficitSaleNet = 0;
+
+  if (currentCash < 0 && currentEtfBalance > 0) {
+    const deficitSale = computePartialEtfSale(
+      -currentCash,
+      currentEtfBalance,
+      currentEtfContributions,
+      currentEtfTaxedGains,
+      taxRate,
+      partialExemptionRate,
+    );
+    etfDeficitSaleGross = deficitSale.grossSale;
+    etfDeficitSaleTax = deficitSale.saleTax;
+    etfDeficitSaleNet = deficitSale.netProceeds;
+    currentCash += etfDeficitSaleNet;
+    currentEtfBalance -= etfDeficitSaleGross;
+    currentEtfContributions *= 1 - deficitSale.fraction;
+    currentEtfTaxedGains *= 1 - deficitSale.fraction;
+  }
+
+  const etfCashInvestment = Math.max(0, currentCash);
+  const cashAfterInvestment = currentCash - etfCashInvestment;
+  const etfBalanceAfterInvestment = currentEtfBalance + etfCashInvestment;
+  const etfContributionsAfterInvestment = currentEtfContributions + etfCashInvestment;
   const grossEtfReturn = etfBalanceAfterInvestment * returnRate;
   const taxableVorabGain = grossEtfReturn * taxableRatio;
   const vorabTax = taxableVorabGain * taxRate;
   const etfBalanceAfterTax = etfBalanceAfterInvestment + grossEtfReturn - vorabTax;
-  const etfTaxedGainsAfterYear = etfTaxedGains + taxableVorabGain;
+  const etfTaxedGainsAfterYear = currentEtfTaxedGains + taxableVorabGain;
   const { taxableSaleGain, saleTax, etfLiquidationValue } = computeEtfSaleTaxData(
     etfBalanceAfterTax,
     etfContributionsAfterInvestment,
@@ -463,7 +489,10 @@ function applyEtfYear({
     etfBalanceAfterTax,
     etfContributionsAfterInvestment,
     etfTaxedGainsAfterYear,
-    etfInvestment,
+    etfInvestment: etfCashInvestment,
+    etfDeficitSaleGross,
+    etfDeficitSaleTax,
+    etfDeficitSaleNet,
     grossEtfReturn,
     vorabTax,
     taxableSaleGain,
@@ -545,6 +574,9 @@ function calculateProjection(input) {
       foundationEtfLiquidationValue: 0,
       foundationVorabTax: 0,
       foundationEtfSaleTax: 0,
+      foundationEtfDeficitSaleGross: 0,
+      foundationEtfDeficitSaleTax: 0,
+      foundationEtfDeficitSaleNet: 0,
       taxableResult: -giftTax,
       foundationWealth: deferredPurchase
         ? foundationCash
@@ -817,6 +849,9 @@ function calculateProjection(input) {
       foundationEtfBalance,
       foundationEtfLiquidationValue: foundationEtf.etfLiquidationValue,
       foundationEtfInvestment: foundationEtf.etfInvestment,
+      foundationEtfDeficitSaleGross: foundationEtf.etfDeficitSaleGross,
+      foundationEtfDeficitSaleTax: foundationEtf.etfDeficitSaleTax,
+      foundationEtfDeficitSaleNet: foundationEtf.etfDeficitSaleNet,
       foundationEtfTaxableSaleGain: foundationEtf.taxableSaleGain,
       foundationGrossEtfReturn: foundationEtf.grossEtfReturn,
       foundationVorabTax: foundationEtf.vorabTax,
@@ -2264,9 +2299,9 @@ export default function Home() {
                           <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                         )
                       ) : row.propertyBoughtThisYear ? (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf) + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung) − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf) + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       ) : (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}) − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       )}
                     </div>
                     <div className={styles.dataItem}>
@@ -2277,7 +2312,9 @@ export default function Home() {
                           {row.propertyBoughtThisYear
                             ? `Nach Teilverkauf für Immobilienkauf (${formatCurrency(row.etfSaleForPurchase)} verkauft): `
                             : ""}
-                          Vorjahresbestand + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + {formatCurrency(row.foundationGrossEtfReturn)} (Brutto-Rendite) − {formatCurrency(row.foundationVorabTax)} (Vorabpauschale)
+                          Vorjahresbestand{row.foundationEtfDeficitSaleGross > 0
+                            ? ` − ${formatCurrency(row.foundationEtfDeficitSaleGross)} (Teilverkauf bei Liquiditätsbedarf, Steuer ${formatCurrency(row.foundationEtfDeficitSaleTax)})`
+                            : ""} + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + {formatCurrency(row.foundationGrossEtfReturn)} (Brutto-Rendite) − {formatCurrency(row.foundationVorabTax)} (Vorabpauschale)
                         </small>
                       )}
                     </div>

@@ -1356,7 +1356,7 @@ export default function Home() {
       );
 
     const breakEvenIndex = result.rows.findIndex(
-      (row) => row.foundationWealth + row.personAssetPosition >= row.compareWealth,
+      (row, index) => index >= 1 && row.foundationWealth + row.personAssetPosition >= row.compareWealth,
     );
     const breakEven =
       breakEvenIndex >= 0

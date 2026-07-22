@@ -752,7 +752,7 @@ function calculateProjection(input) {
       personCash += lenderNetCashFlow;
       if (input.lenderIsTenant && !input.tenantRentFromExternalFunds) {
         personRentPaidFromAssets = annualRent;
-        personCash -= personRentPaidFromAssets;
+        personCash -= annualRent;
       }
     } else {
       // No property yet – only annual admin costs; ETF returns cover operating costs

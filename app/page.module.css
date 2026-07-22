@@ -506,16 +506,10 @@
 
 .stickyFooterPositive {
   color: #4ade80;
-  font-weight: 700;
-  font-size: 0.95rem;
-  white-space: nowrap;
 }
 
 .stickyFooterNegative {
   color: #f87171;
-  font-weight: 700;
-  font-size: 0.95rem;
-  white-space: nowrap;
 }
 
 @media (max-width: 900px) {

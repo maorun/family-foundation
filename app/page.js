@@ -2536,7 +2536,7 @@ export default function Home() {
         <div className={styles.stickyFooterItem}>
           <span className={styles.stickyFooterLabel}>Break-Even:</span>
           {wealthChart.breakEven ? (
-            <span className={styles.stickyFooterPositive}>Jahr {wealthChart.breakEven.year}</span>
+            <span className={`${styles.stickyFooterValue} ${styles.stickyFooterPositive}`}>Jahr {wealthChart.breakEven.year}</span>
           ) : (
             <span className={styles.stickyFooterValue}>nicht erreicht</span>
           )}
@@ -2545,7 +2545,7 @@ export default function Home() {
           <span className={styles.stickyFooterLabel}>
             Vermögensunterschied Jahr {result.input.projectionYears}:
           </span>
-          <span className={wealthDiff >= 0 ? styles.stickyFooterPositive : styles.stickyFooterNegative}>
+          <span className={`${styles.stickyFooterValue} ${wealthDiff >= 0 ? styles.stickyFooterPositive : styles.stickyFooterNegative}`}>
             {wealthDiff >= 0 ? "+" : ""}{formatCurrency(wealthDiff)}
           </span>
         </div>

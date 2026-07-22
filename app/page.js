@@ -578,6 +578,13 @@ function calculateProjection(input) {
   let compareEtfTaxedGains = 0;
   let privateRemainingDepreciableBuilding = privateDepreciableBuildingBase;
 
+  // Vergleichsszenario: Gleiches Vermögen komplett in ETF (keine Immobilie)
+  // Startet mit demselben Stiftungskapital, kein Darlehen, keine Immobilie, nur ETF
+  let etfOnlyCash = input.initialCapital;
+  let etfOnlyEtfBalance = 0;
+  let etfOnlyEtfContributions = 0;
+  let etfOnlyEtfTaxedGains = 0;
+
   const buildingBookValue0 = deferredPurchase ? 0 : depreciableBuildingBase + landBookBase;
 
   const rows = [
@@ -620,6 +627,12 @@ function calculateProjection(input) {
       compareEtfLiquidationValue: 0,
       compareVorabTax: 0,
       compareEtfSaleTax: 0,
+      // Vergleichsvermögen ETF-only (ohne Immobilie) Jahr 0
+      etfOnlyWealth: etfOnlyCash,
+      etfOnlyEtfBalance,
+      etfOnlyEtfLiquidationValue: 0,
+      etfOnlyVorabTax: 0,
+      etfOnlyEtfSaleTax: 0,
       propertyOwned: !deferredPurchase,
       propertyBoughtThisYear: false,
       etfSaleForPurchase: 0,
@@ -867,6 +880,21 @@ function calculateProjection(input) {
     compareEtfContributions = compareEtf.etfContributionsAfterInvestment;
     compareEtfTaxedGains = compareEtf.etfTaxedGainsAfterYear;
 
+    const etfOnlyEtf = applyEtfYear({
+      cash: etfOnlyCash,
+      etfBalance: etfOnlyEtfBalance,
+      etfContributions: etfOnlyEtfContributions,
+      etfTaxedGains: etfOnlyEtfTaxedGains,
+      returnRate: input.etfReturnRate,
+      taxRate: input.privateEtfTaxRate,
+      partialExemptionRate: input.privateEtfPartialExemptionRate,
+      saverAllowance: input.saverAllowance,
+    });
+    etfOnlyCash = etfOnlyEtf.cashAfterInvestment;
+    etfOnlyEtfBalance = etfOnlyEtf.etfBalanceAfterTax;
+    etfOnlyEtfContributions = etfOnlyEtf.etfContributionsAfterInvestment;
+    etfOnlyEtfTaxedGains = etfOnlyEtf.etfTaxedGainsAfterYear;
+
     rows.push({
       year,
       foundationCash,
@@ -940,6 +968,12 @@ function calculateProjection(input) {
       compareGrossEtfReturn: compareEtf.grossEtfReturn,
       compareVorabTax: compareEtf.vorabTax,
       compareEtfSaleTax: compareEtf.saleTax,
+      // Vergleichsvermögen ETF-only (ohne Immobilie, gleiches Startkapital)
+      etfOnlyWealth: etfOnlyCash + etfOnlyEtf.etfLiquidationValue,
+      etfOnlyEtfBalance,
+      etfOnlyEtfLiquidationValue: etfOnlyEtf.etfLiquidationValue,
+      etfOnlyVorabTax: etfOnlyEtf.vorabTax,
+      etfOnlyEtfSaleTax: etfOnlyEtf.saleTax,
       // Deferred-purchase fields
       propertyOwned: foundationOwnsProperty,
       propertyBoughtThisYear,
@@ -1276,6 +1310,11 @@ export default function Home() {
         ? `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
         : `Ohne Stiftung, Kapital direkt in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`,
     },
+    ...(includeRealEstate ? [{
+      title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (gleiches Kapital, nur ETF)`,
+      value: formatCurrency(lastYear.etfOnlyWealth),
+      detail: `Gleiches Startkapital (${formatCurrency(result.input.initialCapital)}) ohne Immobilie, vollständig in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`,
+    }] : []),
   ].filter((card) => (!card.realEstateOnly || includeRealEstate) && (!card.loanOnly || result.input.loanAmount > 0));
 
   const wealthChart = useMemo(() => {
@@ -1349,6 +1388,16 @@ export default function Home() {
           year: row.year,
           value: row.compareWealth,
         })),
+      },
+      {
+        id: "etfOnly",
+        label: "Vergleich: Gleiches Kapital, nur ETF (ohne Immobilie)",
+        color: "#16a34a",
+        values: result.rows.map((row) => ({
+          year: row.year,
+          value: row.etfOnlyWealth,
+        })),
+        realEstateOnly: true,
       },
     ];
     const series = allSeries.filter((s) => (!s.realEstateOnly || includeRealEstate) && (!s.loanOnly || result.input.loanAmount > 0));
@@ -2330,6 +2379,18 @@ export default function Home() {
                         </div>
                       </dl>
                     </div>
+                    {includeRealEstate && (
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Gleiches Kapital, nur ETF (Vergleich)</h5>
+                        <dl className={styles.dataGrid}>
+                          <div className={styles.dataItem}>
+                            <dt>Vergleichsvermögen (ETF-only)</dt>
+                            <dd>{formatCurrency(row.etfOnlyWealth)}</dd>
+                            <small className={styles.formula}>ETF (nach Verkaufsteuer) — gleiches Startkapital ({formatCurrency(result.input.initialCapital)}), keine Immobilie, kein Darlehen, kein Verwaltungsaufwand</small>
+                          </div>
+                        </dl>
+                      </div>
+                    )}
                   </div>
                 </div>
 

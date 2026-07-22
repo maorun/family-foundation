@@ -1757,6 +1757,11 @@ export default function Home() {
     }));
   }
 
+  const wealthDiff =
+    lastYear.foundationWealth +
+    (result.input.loanAmount > 0 ? lastYear.personAssetPosition : 0) -
+    lastYear.compareWealth;
+
   return (
     <>
       <ServiceWorkerRegistration />
@@ -2527,6 +2532,24 @@ export default function Home() {
           </p>
         </section>
       </main>
+      <footer className={styles.stickyFooter}>
+        <div className={styles.stickyFooterItem}>
+          <span className={styles.stickyFooterLabel}>Break-Even:</span>
+          {wealthChart.breakEven ? (
+            <span className={`${styles.stickyFooterValue} ${styles.stickyFooterPositive}`}>Jahr {wealthChart.breakEven.year}</span>
+          ) : (
+            <span className={styles.stickyFooterValue}>nicht erreicht</span>
+          )}
+        </div>
+        <div className={styles.stickyFooterItem}>
+          <span className={styles.stickyFooterLabel}>
+            Vermögensunterschied Jahr {result.input.projectionYears}:
+          </span>
+          <span className={`${styles.stickyFooterValue} ${wealthDiff >= 0 ? styles.stickyFooterPositive : styles.stickyFooterNegative}`}>
+            {wealthDiff >= 0 ? "+" : ""}{formatCurrency(wealthDiff)}
+          </span>
+        </div>
+      </footer>
     </>
   );
 }

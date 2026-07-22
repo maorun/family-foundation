@@ -378,6 +378,8 @@ function createProjectionInput(
   personalTaxSteps,
   comparePaysRealEstateTax,
   bulletLoan = false,
+  lenderIsTenant = false,
+  tenantRentFromExternalFunds = false,
 ) {
   return {
     ...validatedInput,
@@ -387,6 +389,8 @@ function createProjectionInput(
     personalTaxSteps,
     comparePaysRealEstateTax,
     bulletLoan,
+    lenderIsTenant,
+    tenantRentFromExternalFunds,
   };
 }
 
@@ -686,6 +690,7 @@ function calculateProjection(input) {
     let extraRepayment = 0;
     let lenderTax = 0;
     let lenderNetCashFlow = 0;
+    let personRentPaidFromAssets = 0;
 
     const loanAtStartOfYear = remainingLoan;
     const prevFoundationCash = foundationCash;
@@ -745,6 +750,10 @@ function calculateProjection(input) {
         remainingDepreciableBuildingValue - annualDepreciation,
       );
       personCash += lenderNetCashFlow;
+      if (input.lenderIsTenant && !input.tenantRentFromExternalFunds) {
+        personRentPaidFromAssets = annualRent;
+        personCash -= personRentPaidFromAssets;
+      }
     } else {
       // No property yet – only annual admin costs; ETF returns cover operating costs
       annualInterest = 0;
@@ -880,7 +889,7 @@ function calculateProjection(input) {
         remainingLoan -
         erbsRemainingLiability,
       remainingLoan,
-      personNetCashFlow: lenderNetCashFlow,
+      personNetCashFlow: lenderNetCashFlow - personRentPaidFromAssets,
       personAssetPosition: remainingLoan + personCash + personEtf.etfLiquidationValue,
       personCash,
       personEtfBalance,
@@ -904,6 +913,7 @@ function calculateProjection(input) {
       personGuvInterest: annualInterest,
       personGuvTax: lenderTax,
       personGuvResult: annualInterest - lenderTax,
+      personRentPaidFromAssets,
       personalTaxRate: yearPersonalTaxRate,
       // Bilanz
       buildingDepreciableValue,
@@ -1005,6 +1015,8 @@ export default function Home() {
       includeRealEstate,
       bulletLoan,
       bulletLoanShowReturn,
+      lenderIsTenant,
+      tenantRentFromExternalFunds,
       result,
     },
     setState,
@@ -1019,6 +1031,8 @@ export default function Home() {
     includeRealEstate: false,
     bulletLoan: false,
     bulletLoanShowReturn: false,
+    lenderIsTenant: false,
+    tenantRentFromExternalFunds: false,
     result: DEFAULT_RESULT,
   });
 
@@ -1038,6 +1052,8 @@ export default function Home() {
       const nextIncludeRealEstate = parsed.includeRealEstate ?? false;
       const nextBulletLoan = parsed.bulletLoan ?? false;
       const nextBulletLoanShowReturn = parsed.bulletLoanShowReturn ?? false;
+      const nextLenderIsTenant = parsed.lenderIsTenant ?? false;
+      const nextTenantRentFromExternalFunds = parsed.tenantRentFromExternalFunds ?? false;
       const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, nextIncludeRealEstate), nextBulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextPersonalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
@@ -1053,6 +1069,8 @@ export default function Home() {
         includeRealEstate: nextIncludeRealEstate,
         bulletLoan: nextBulletLoan,
         bulletLoanShowReturn: nextBulletLoanShowReturn,
+        lenderIsTenant: nextLenderIsTenant,
+        tenantRentFromExternalFunds: nextTenantRentFromExternalFunds,
         result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
@@ -1062,6 +1080,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 nextIncludeRealEstate ? nextComparePaysRealEstateTax : false,
                 nextBulletLoan,
+                nextLenderIsTenant,
+                nextTenantRentFromExternalFunds,
               ),
             )
           : DEFAULT_RESULT,
@@ -1088,6 +1108,8 @@ export default function Home() {
             includeRealEstate,
             bulletLoan,
             bulletLoanShowReturn,
+            lenderIsTenant,
+            tenantRentFromExternalFunds,
           }),
         );
       } catch {
@@ -1106,6 +1128,8 @@ export default function Home() {
     includeRealEstate,
     bulletLoan,
     bulletLoanShowReturn,
+    lenderIsTenant,
+    tenantRentFromExternalFunds,
   ]);
 
   const validation = useMemo(
@@ -1414,6 +1438,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1438,6 +1464,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1461,6 +1489,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.comparePaysRealEstateTax,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1484,6 +1514,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 checked,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1507,6 +1539,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 checked ? currentState.comparePaysRealEstateTax : false,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1535,6 +1569,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1561,6 +1597,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1588,6 +1626,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1613,6 +1653,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
                 currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1638,6 +1680,8 @@ export default function Home() {
                 nextTaxValidation.parsedSteps,
                 currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
                 checked,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
               ),
             )
           : currentState.result,
@@ -1650,6 +1694,60 @@ export default function Home() {
       ...currentState,
       bulletLoanShowReturn: checked,
     }));
+  }
+
+  function handleLenderTenantToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      const nextTenantRentFromExternalFunds = checked
+        ? currentState.tenantRentFromExternalFunds
+        : false;
+      return {
+        ...currentState,
+        lenderIsTenant: checked,
+        tenantRentFromExternalFunds: nextTenantRentFromExternalFunds,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                checked,
+                nextTenantRentFromExternalFunds,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleTenantRentFromExternalFundsToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        tenantRentFromExternalFunds: checked,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                checked,
+              ),
+            )
+          : currentState.result,
+      };
+    });
   }
 
   function handleOverviewYearChange(value) {
@@ -1874,6 +1972,34 @@ export default function Home() {
               />
               <label htmlFor="surplusToRepayment" className={styles.checkboxLabel}>
                 Jährlichen Liquiditätsüberschuss als Sondertilgung verwenden
+              </label>
+            </div>
+          )}
+          {includeRealEstate && (
+            <div className={styles.checkboxRow}>
+              <input
+                id="lenderIsTenant"
+                type="checkbox"
+                checked={lenderIsTenant}
+                onChange={(event) => handleLenderTenantToggle(event.target.checked)}
+                className={styles.checkbox}
+              />
+              <label htmlFor="lenderIsTenant" className={styles.checkboxLabel}>
+                Darlehensgeber als Mieter annehmen
+              </label>
+            </div>
+          )}
+          {includeRealEstate && lenderIsTenant && (
+            <div className={styles.checkboxRow}>
+              <input
+                id="tenantRentFromExternalFunds"
+                type="checkbox"
+                checked={tenantRentFromExternalFunds}
+                onChange={(event) => handleTenantRentFromExternalFundsToggle(event.target.checked)}
+                className={styles.checkbox}
+              />
+              <label htmlFor="tenantRentFromExternalFunds" className={styles.checkboxLabel}>
+                Miete aus externen Mitteln zahlen (nicht aus Vermögen der Person)
               </label>
             </div>
           )}
@@ -2166,7 +2292,7 @@ export default function Home() {
                           <dd>{formatCurrency(row.personNetCashFlow)}</dd>
                           {row.year > 0 && row.propertyOwned && (
                             <small className={styles.formula}>
-                              {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""} + {formatCurrency(row.personGuvResult)} (Netto-Zinsergebnis)
+                              {formatCurrency(row.scheduledRepayment)} (planm. Tilgung){row.extraRepayment > 0 ? ` + ${formatCurrency(row.extraRepayment)} (Sondertilgung)` : ""} + {formatCurrency(row.personGuvResult)} (Netto-Zinsergebnis){row.personRentPaidFromAssets > 0 ? ` − ${formatCurrency(row.personRentPaidFromAssets)} (Mietzahlung aus Vermögen)` : ""}
                             </small>
                           )}
                         </div>

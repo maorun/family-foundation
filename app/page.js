@@ -1311,7 +1311,7 @@ export default function Home() {
         : `Ohne Stiftung, Kapital direkt in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`,
     },
     ...(includeRealEstate ? [{
-      title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (gleiches Kapital, nur ETF)`,
+      title: `ETF-Vergleichsvermögen Jahr ${result.input.projectionYears} (gleiches Kapital, nur ETF)`,
       value: formatCurrency(lastYear.etfOnlyWealth),
       detail: `Gleiches Startkapital (${formatCurrency(result.input.initialCapital)}) ohne Immobilie, vollständig in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`,
     }] : []),
@@ -1391,7 +1391,7 @@ export default function Home() {
       },
       {
         id: "etfOnly",
-        label: "Vergleich: Gleiches Kapital, nur ETF (ohne Immobilie)",
+        label: "Gleiches Kapital, nur ETF (ohne Immobilie)",
         color: "#16a34a",
         values: result.rows.map((row) => ({
           year: row.year,

@@ -371,6 +371,34 @@ function getPersonalTaxRateForYear(personalTaxSteps, year) {
   return personalTaxSteps[0].rate;
 }
 
+function validateMaintenanceEvents(events) {
+  if (!events || events.length === 0) {
+    return { invalidIndices: [], parsedEvents: [] };
+  }
+
+  const invalidIndices = [];
+  const parsed = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const evt = events[i];
+    const year = parseNumber(String(evt.year ?? ""));
+    const amount = parseNumber(String(evt.amount ?? ""));
+
+    let valid = true;
+    if (year === null || !Number.isInteger(year) || year < 1) valid = false;
+    if (amount === null || amount <= 0) valid = false;
+    if (evt.type !== "full" && evt.type !== "afa") valid = false;
+
+    if (!valid) {
+      invalidIndices.push(i);
+    } else {
+      parsed.push({ year, amount, type: evt.type });
+    }
+  }
+
+  return { invalidIndices, parsedEvents: parsed };
+}
+
 function createProjectionInput(
   validatedInput,
   relationship,
@@ -380,6 +408,7 @@ function createProjectionInput(
   bulletLoan = false,
   lenderIsTenant = false,
   tenantRentFromExternalFunds = false,
+  maintenanceEvents = [],
 ) {
   return {
     ...validatedInput,
@@ -391,6 +420,7 @@ function createProjectionInput(
     bulletLoan,
     lenderIsTenant,
     tenantRentFromExternalFunds,
+    maintenanceEvents,
   };
 }
 
@@ -554,6 +584,8 @@ function calculateProjection(input) {
   let foundationEtfTaxedGains = 0;
   let remainingLoan = deferredPurchase ? 0 : input.loanAmount;
   let remainingDepreciableBuildingValue = deferredPurchase ? 0 : depreciableBuildingBase;
+  // Tracks the total depreciable base including AfA-qualifying maintenance additions
+  let effectiveDepreciableBase = deferredPurchase ? 0 : depreciableBuildingBase;
   let personCash = 0;
   let personEtfBalance = 0;
   let personEtfContributions = 0;
@@ -687,6 +719,7 @@ function calculateProjection(input) {
         foundationCash -= propertyValue + realEstateTax;
         remainingLoan = input.loanAmount;
         remainingDepreciableBuildingValue = depreciableBuildingBase;
+        effectiveDepreciableBase = depreciableBuildingBase;
         foundationOwnsProperty = true;
         purchaseYear = year;
         propertyBoughtThisYear = true;
@@ -704,27 +737,48 @@ function calculateProjection(input) {
     let lenderTax = 0;
     let lenderNetCashFlow = 0;
     let personRentPaidFromAssets = 0;
+    let maintenanceCashOut = 0;
+    let maintenanceFullDeduction = 0;
+    let maintenanceAfaAddition = 0;
 
     const loanAtStartOfYear = remainingLoan;
     const prevFoundationCash = foundationCash;
 
     if (foundationOwnsProperty) {
+      // Process maintenance events for this year
+      const yearMaintenanceEvents = (input.maintenanceEvents ?? []).filter(
+        (e) => e.year === year,
+      );
+      for (const evt of yearMaintenanceEvents) {
+        maintenanceCashOut += evt.amount;
+        if (evt.type === "full") {
+          maintenanceFullDeduction += evt.amount;
+        } else {
+          // AfA-qualifying maintenance: added to depreciable base
+          maintenanceAfaAddition += evt.amount;
+          effectiveDepreciableBase += evt.amount;
+          remainingDepreciableBuildingValue += evt.amount;
+        }
+      }
+
       annualInterest = remainingLoan * input.loanInterestRate;
       annualDepreciation = Math.min(
         remainingDepreciableBuildingValue,
-        depreciableBuildingBase * input.depreciationRate,
+        effectiveDepreciableBase * input.depreciationRate,
       );
       taxableResult =
         annualRent -
         input.annualAdminCost -
         annualInterest -
-        annualDepreciation;
+        annualDepreciation -
+        maintenanceFullDeduction;
       // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
       // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
       foundationCashFlow =
         annualRent -
         input.annualAdminCost -
-        annualInterest;
+        annualInterest -
+        maintenanceCashOut;
       const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
 
       if (input.bulletLoan) {
@@ -933,6 +987,9 @@ function calculateProjection(input) {
       guvInterest: annualInterest,
       guvDepreciation: annualDepreciation,
       guvResult: taxableResult,
+      guvMaintenanceCashOut: maintenanceCashOut,
+      guvMaintenanceFullDeduction: maintenanceFullDeduction,
+      guvMaintenanceAfaAddition: maintenanceAfaAddition,
       loanAtStartOfYear,
       scheduledRepayment,
       extraRepayment,
@@ -1014,6 +1071,9 @@ const DEFAULT_RESULT = calculateProjection({
     validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS).parsedSteps,
     true,
     false,
+    false,
+    false,
+    [],
   ),
 });
 
@@ -1051,6 +1111,7 @@ export default function Home() {
       bulletLoanShowReturn,
       lenderIsTenant,
       tenantRentFromExternalFunds,
+      maintenanceEvents,
       result,
     },
     setState,
@@ -1067,6 +1128,7 @@ export default function Home() {
     bulletLoanShowReturn: false,
     lenderIsTenant: false,
     tenantRentFromExternalFunds: false,
+    maintenanceEvents: [],
     result: DEFAULT_RESULT,
   });
 
@@ -1088,8 +1150,10 @@ export default function Home() {
       const nextBulletLoanShowReturn = parsed.bulletLoanShowReturn ?? false;
       const nextLenderIsTenant = parsed.lenderIsTenant ?? false;
       const nextTenantRentFromExternalFunds = parsed.tenantRentFromExternalFunds ?? false;
+      const nextMaintenanceEvents = parsed.maintenanceEvents ?? [];
       const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, nextIncludeRealEstate), nextBulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextPersonalTaxSteps);
+      const nextMaintenanceValidation = validateMaintenanceEvents(nextMaintenanceEvents);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({
@@ -1105,6 +1169,7 @@ export default function Home() {
         bulletLoanShowReturn: nextBulletLoanShowReturn,
         lenderIsTenant: nextLenderIsTenant,
         tenantRentFromExternalFunds: nextTenantRentFromExternalFunds,
+        maintenanceEvents: nextMaintenanceEvents,
         result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
@@ -1116,6 +1181,7 @@ export default function Home() {
                 nextBulletLoan,
                 nextLenderIsTenant,
                 nextTenantRentFromExternalFunds,
+                nextMaintenanceValidation.parsedEvents,
               ),
             )
           : DEFAULT_RESULT,
@@ -1144,6 +1210,7 @@ export default function Home() {
             bulletLoanShowReturn,
             lenderIsTenant,
             tenantRentFromExternalFunds,
+            maintenanceEvents,
           }),
         );
       } catch {
@@ -1164,6 +1231,7 @@ export default function Home() {
     bulletLoanShowReturn,
     lenderIsTenant,
     tenantRentFromExternalFunds,
+    maintenanceEvents,
   ]);
 
   const validation = useMemo(
@@ -1171,8 +1239,10 @@ export default function Home() {
     [formValues, includeRealEstate, bulletLoan],
   );
   const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
+  const maintenanceValidation = useMemo(() => validateMaintenanceEvents(maintenanceEvents), [maintenanceEvents]);
   const hasInvalidFields = validation.invalidIds.length > 0;
   const hasInvalidTaxSteps = taxStepsValidation.parsedSteps === null;
+  const hasInvalidMaintenanceEvents = maintenanceValidation.invalidIndices.length > 0;
   const selectedRelationship = useMemo(
     () => getRelationshipOption(relationshipId),
     [relationshipId],
@@ -1489,6 +1559,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1515,6 +1586,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1540,6 +1612,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1565,6 +1638,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1590,6 +1664,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1620,6 +1695,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1648,6 +1724,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1677,6 +1754,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1704,6 +1782,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1731,6 +1810,7 @@ export default function Home() {
                 checked,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1767,6 +1847,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 checked,
                 nextTenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1792,6 +1873,93 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 checked,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleAddMaintenanceEvent() {
+    setState((currentState) => {
+      const nextEvents = [
+        ...currentState.maintenanceEvents,
+        { year: "1", amount: "5000", type: "full" },
+      ];
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        maintenanceEvents: nextEvents,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(nextEvents).parsedEvents,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleRemoveMaintenanceEvent(index) {
+    setState((currentState) => {
+      const nextEvents = currentState.maintenanceEvents.filter((_, i) => i !== index);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        maintenanceEvents: nextEvents,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(nextEvents).parsedEvents,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleMaintenanceEventChange(index, field, value) {
+    setState((currentState) => {
+      const nextEvents = currentState.maintenanceEvents.map((evt, i) =>
+        i === index ? { ...evt, [field]: value } : evt,
+      );
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        maintenanceEvents: nextEvents,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(nextEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -2069,6 +2237,82 @@ export default function Home() {
               <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
                 Vergleichsvermögen zahlt Grunderwerbsteuer
               </label>
+            </div>
+          )}
+          {includeRealEstate && (
+            <div className={styles.taxStepsSection}>
+              <span className={styles.fieldLabel}>Ereignisse: Instandhaltung</span>
+              <p className={styles.hint}>
+                Einmalige Instandhaltungskosten eintragen, die in einem bestimmten Jahr anfallen.
+                Wählen Sie, ob die Kosten steuerlich voll abzugsfähig sind oder über 2 % AfA abgeschrieben werden.
+                Eine Umlage auf den Mieter ist nicht vorgesehen.
+              </p>
+              {maintenanceEvents.map((evt, index) => {
+                const isInvalid = maintenanceValidation.invalidIndices.includes(index);
+                return (
+                  <div key={index} className={styles.taxStepRow}>
+                    <div className={styles.taxStepField}>
+                      <label htmlFor={`maintYear_${index}`} className={styles.taxStepLabel}>Jahr</label>
+                      <input
+                        id={`maintYear_${index}`}
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={evt.year}
+                        onChange={(event) => handleMaintenanceEventChange(index, "year", event.target.value)}
+                        className={`${styles.fieldInput} ${isInvalid ? styles.fieldInputInvalid : ""}`.trim()}
+                        aria-invalid={isInvalid}
+                        required
+                      />
+                    </div>
+                    <div className={styles.taxStepField}>
+                      <label htmlFor={`maintAmount_${index}`} className={styles.taxStepLabel}>Betrag (€)</label>
+                      <input
+                        id={`maintAmount_${index}`}
+                        type="number"
+                        min="0.01"
+                        step="100"
+                        value={evt.amount}
+                        onChange={(event) => handleMaintenanceEventChange(index, "amount", event.target.value)}
+                        className={`${styles.fieldInput} ${isInvalid ? styles.fieldInputInvalid : ""}`.trim()}
+                        aria-invalid={isInvalid}
+                        required
+                      />
+                    </div>
+                    <div className={styles.taxStepField}>
+                      <label htmlFor={`maintType_${index}`} className={styles.taxStepLabel}>Steuerliche Behandlung</label>
+                      <select
+                        id={`maintType_${index}`}
+                        value={evt.type}
+                        onChange={(event) => handleMaintenanceEventChange(index, "type", event.target.value)}
+                        className={styles.fieldInput}
+                      >
+                        <option value="full">Voll abzugsfähig (Sofortabzug)</option>
+                        <option value="afa">2 % AfA (Abschreibung)</option>
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMaintenanceEvent(index)}
+                      className={styles.taxStepRemoveButton}
+                    >
+                      Entfernen
+                    </button>
+                  </div>
+                );
+              })}
+              {hasInvalidMaintenanceEvents && (
+                <p className={styles.validationMessage}>
+                  Bitte korrigieren Sie die rot markierten Instandhaltungseinträge (Jahr ≥ 1, Betrag &gt; 0).
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleAddMaintenanceEvent}
+                className={styles.taxStepAddButton}
+              >
+                + Instandhaltung hinzufügen
+              </button>
             </div>
           )}
           <p className={styles.hint}>
@@ -2432,15 +2676,26 @@ export default function Home() {
                             <dt>AfA</dt>
                             <dd>{formatCurrency(row.guvDepreciation)}</dd>
                             {row.propertyOwned && (
-                              <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
+                              <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz){row.guvMaintenanceAfaAddition > 0 ? ` + ${formatCurrency(row.guvMaintenanceAfaAddition)} (neue AfA-Basis Instandhaltung)` : ""}</small>
                             )}
                           </div>
+                          {row.guvMaintenanceCashOut > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Instandhaltung</dt>
+                              <dd className={styles.negative}>{formatCurrency(row.guvMaintenanceCashOut)}</dd>
+                              <small className={styles.formula}>
+                                {row.guvMaintenanceFullDeduction > 0 && `${formatCurrency(row.guvMaintenanceFullDeduction)} voll abzugsfähig`}
+                                {row.guvMaintenanceFullDeduction > 0 && row.guvMaintenanceAfaAddition > 0 && "; "}
+                                {row.guvMaintenanceAfaAddition > 0 && `${formatCurrency(row.guvMaintenanceAfaAddition)} AfA-aktiviert (Abschreibung über Folgejahre)`}
+                              </small>
+                            </div>
+                          )}
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Jahresüberschuss/-fehlbetrag</dt>
                             <dd className={row.guvResult < 0 ? styles.negative : styles.positive}>
                               {formatCurrency(row.guvResult)}
                             </dd>
-                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>
+                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA){row.guvMaintenanceFullDeduction > 0 ? ` − ${formatCurrency(row.guvMaintenanceFullDeduction)} (Instandhaltung Sofortabzug)` : ""}</small>
                           </div>
                         </dl>
                       </div>

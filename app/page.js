@@ -1895,13 +1895,9 @@ export default function Home() {
               </select>
             </div>
           )}
-          <div className={styles.grid}>
-            {FIELD_DEFINITIONS.map((field) => {
-              if (field.realEstate && !includeRealEstate) return null;
-              if (field.id === "loanRepaymentRate" && bulletLoan) return null;
-              if (field.conditionalField === "bulletLoan" && !bulletLoan) return null;
+          {(() => {
+            const renderField = (field) => {
               const isInvalid = validation.invalidIds.includes(field.id);
-
               return (
                 <div key={field.id}>
                   <label htmlFor={field.id} className={styles.fieldLabel}>
@@ -1921,8 +1917,30 @@ export default function Home() {
                   />
                 </div>
               );
-            })}
-          </div>
+            };
+
+            const nonRealEstateFields = FIELD_DEFINITIONS.filter(
+              (f) =>
+                !f.realEstate &&
+                !(f.id === "loanRepaymentRate" && bulletLoan) &&
+                !(f.conditionalField === "bulletLoan" && !bulletLoan),
+            );
+
+            const realEstateFields = FIELD_DEFINITIONS.filter((f) => f.realEstate);
+
+            return (
+              <>
+                <div className={styles.grid}>
+                  {nonRealEstateFields.map(renderField)}
+                </div>
+                {includeRealEstate && (
+                  <div className={styles.realEstateFields}>
+                    {realEstateFields.map(renderField)}
+                  </div>
+                )}
+              </>
+            );
+          })()}
           <div className={styles.taxStepsSection}>
             <span className={styles.fieldLabel}>Persönlicher Steuersatz der Person (%)</span>
             <p className={styles.hint}>

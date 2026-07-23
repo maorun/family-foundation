@@ -69,6 +69,13 @@
   max-width: 320px;
 }
 
+.realEstateFields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
 .radioFieldset {
   margin: 0 0 16px;
   padding: 0;

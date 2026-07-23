@@ -1875,26 +1875,6 @@ export default function Home() {
               Immobilie in die Rechnung einbeziehen
             </label>
           </div>
-          {includeRealEstate && (
-            <div className={styles.bundeslandRow}>
-              <label htmlFor="bundesland" className={styles.fieldLabel}>
-                Bundesland (setzt Grunderwerbsteuer-Satz)
-              </label>
-              <select
-                id="bundesland"
-                value={bundesland ?? ""}
-                onChange={(event) => handleBundeslandChange(event.target.value)}
-                className={styles.fieldInput}
-              >
-                <option value="">— Manuell eingeben —</option>
-                {BUNDESLAENDER.map((bl) => (
-                  <option key={bl.name} value={bl.name}>
-                    {bl.name} ({bl.rate} %)
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           {(() => {
             const renderField = (field) => {
               const isInvalid = validation.invalidIds.includes(field.id);
@@ -1935,6 +1915,24 @@ export default function Home() {
                 </div>
                 {includeRealEstate && (
                   <div className={styles.realEstateFields}>
+                    <div className={styles.bundeslandRow}>
+                      <label htmlFor="bundesland" className={styles.fieldLabel}>
+                        Bundesland (setzt Grunderwerbsteuer-Satz)
+                      </label>
+                      <select
+                        id="bundesland"
+                        value={bundesland ?? ""}
+                        onChange={(event) => handleBundeslandChange(event.target.value)}
+                        className={styles.fieldInput}
+                      >
+                        <option value="">— Manuell eingeben —</option>
+                        {BUNDESLAENDER.map((bl) => (
+                          <option key={bl.name} value={bl.name}>
+                            {bl.name} ({bl.rate} %)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     {realEstateFields.map(renderField)}
                   </div>
                 )}

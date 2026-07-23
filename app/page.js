@@ -386,7 +386,7 @@ function validateMaintenanceEvents(events) {
 
     let valid = true;
     if (year === null || !Number.isInteger(year) || year < 1) valid = false;
-    if (amount === null || amount <= 0) valid = false;
+    if (amount === null || amount < 0.01) valid = false;
     if (evt.type !== "full" && evt.type !== "afa") valid = false;
 
     if (!valid) {

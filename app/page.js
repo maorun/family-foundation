@@ -177,6 +177,10 @@ const ERBERSATZ_CHILD_ALLOWANCE = 400_000; // Freibetrag je Kind, Steuerklasse I
 const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerklasse I (Kinder)
 const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0.8; // 80 % gem. § 20 InvStG für körperschaftsteuerpflichtige Anleger (Aktienfonds)
 const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0.3; // 30 % gem. § 20 InvStG für private Anleger (Aktienfonds)
+// Körperschaftsteuer (§ 23 Abs. 1 KStG) für Familienstiftungen
+const KST_RATE = 0.15;
+const SOLZ_ON_KST = 0.055; // Solidaritätszuschlag auf KSt
+const KST_COMBINED_RATE = KST_RATE * (1 + SOLZ_ON_KST); // 15,825 %
 
 const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },
@@ -371,6 +375,34 @@ function getPersonalTaxRateForYear(personalTaxSteps, year) {
   return personalTaxSteps[0].rate;
 }
 
+function validateMaintenanceEvents(events) {
+  if (!events || events.length === 0) {
+    return { invalidIndices: [], parsedEvents: [] };
+  }
+
+  const invalidIndices = [];
+  const parsed = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const evt = events[i];
+    const year = parseNumber(String(evt.year ?? ""));
+    const amount = parseNumber(String(evt.amount ?? ""));
+
+    let valid = true;
+    if (year === null || !Number.isInteger(year) || year < 1) valid = false;
+    if (amount === null || amount < 0.01) valid = false;
+    if (evt.type !== "full" && evt.type !== "afa") valid = false;
+
+    if (!valid) {
+      invalidIndices.push(i);
+    } else {
+      parsed.push({ year, amount, type: evt.type });
+    }
+  }
+
+  return { invalidIndices, parsedEvents: parsed };
+}
+
 function createProjectionInput(
   validatedInput,
   relationship,
@@ -380,6 +412,7 @@ function createProjectionInput(
   bulletLoan = false,
   lenderIsTenant = false,
   tenantRentFromExternalFunds = false,
+  maintenanceEvents = [],
 ) {
   return {
     ...validatedInput,
@@ -391,6 +424,7 @@ function createProjectionInput(
     bulletLoan,
     lenderIsTenant,
     tenantRentFromExternalFunds,
+    maintenanceEvents,
   };
 }
 
@@ -554,6 +588,8 @@ function calculateProjection(input) {
   let foundationEtfTaxedGains = 0;
   let remainingLoan = deferredPurchase ? 0 : input.loanAmount;
   let remainingDepreciableBuildingValue = deferredPurchase ? 0 : depreciableBuildingBase;
+  // Tracks the total depreciable base including AfA-qualifying maintenance additions
+  let effectiveDepreciableBase = deferredPurchase ? 0 : depreciableBuildingBase;
   let personCash = 0;
   let personEtfBalance = 0;
   let personEtfContributions = 0;
@@ -563,6 +599,9 @@ function calculateProjection(input) {
   let erbsRemainingLiability = 0;
   let erbsCurrentInstallment = 0;
   let erbsCurrentCycleAmount = 0;
+
+  // Körperschaftsteuer-Verlustvortrag (§ 10d EStG i.V.m. § 8 KStG)
+  let taxLossCarryforward = 0;
 
   // Kumulierte Zinsen/Steuer der darlehensgebenden Person (für endfälliges Darlehen)
   let personCumulativeGrossInterest = 0;
@@ -577,6 +616,8 @@ function calculateProjection(input) {
   let compareEtfContributions = 0;
   let compareEtfTaxedGains = 0;
   let privateRemainingDepreciableBuilding = privateDepreciableBuildingBase;
+  // Tracks the total depreciable base for the private comparison including AfA-qualifying maintenance
+  let privateEffectiveDepreciableBase = privateDepreciableBuildingBase;
 
   // Vergleichsszenario: Gleiches Vermögen komplett in ETF (keine Immobilie)
   // Startet mit demselben Stiftungskapital, kein Darlehen, keine Immobilie, nur ETF
@@ -640,6 +681,19 @@ function calculateProjection(input) {
       etfSaleNetForPurchase: 0,
       personCumulativeGrossInterest: 0,
       personCumulativeInterestTax: 0,
+      guvKstAmount: 0,
+      guvKstBase: 0,
+      guvKstUsedCarryforward: 0,
+      guvLossCarryforward: 0,
+      guvMaintenanceEtfSaleGross: 0,
+      guvMaintenanceEtfSaleTax: 0,
+      guvMaintenanceEtfSaleNet: 0,
+      compareMaintenanceCashOut: 0,
+      compareMaintenanceFullDeduction: 0,
+      compareMaintenanceAfaAddition: 0,
+      compareMaintenanceEtfSaleGross: 0,
+      compareMaintenanceEtfSaleTax: 0,
+      compareMaintenanceEtfSaleNet: 0,
     },
   ];
 
@@ -687,6 +741,7 @@ function calculateProjection(input) {
         foundationCash -= propertyValue + realEstateTax;
         remainingLoan = input.loanAmount;
         remainingDepreciableBuildingValue = depreciableBuildingBase;
+        effectiveDepreciableBase = depreciableBuildingBase;
         foundationOwnsProperty = true;
         purchaseYear = year;
         propertyBoughtThisYear = true;
@@ -704,27 +759,74 @@ function calculateProjection(input) {
     let lenderTax = 0;
     let lenderNetCashFlow = 0;
     let personRentPaidFromAssets = 0;
+    let maintenanceCashOut = 0;
+    let maintenanceFullDeduction = 0;
+    let maintenanceAfaAddition = 0;
+    let maintenanceEtfSaleGross = 0;
+    let maintenanceEtfSaleTax = 0;
+    let maintenanceEtfSaleNet = 0;
 
     const loanAtStartOfYear = remainingLoan;
     const prevFoundationCash = foundationCash;
 
     if (foundationOwnsProperty) {
+      // Process maintenance events for this year
+      const yearMaintenanceEvents = (input.maintenanceEvents ?? []).filter(
+        (e) => e.year === year,
+      );
+      for (const evt of yearMaintenanceEvents) {
+        maintenanceCashOut += evt.amount;
+        if (evt.type === "full") {
+          maintenanceFullDeduction += evt.amount;
+        } else {
+          // AfA-qualifying maintenance: added to depreciable base
+          maintenanceAfaAddition += evt.amount;
+          effectiveDepreciableBase += evt.amount;
+          remainingDepreciableBuildingValue += evt.amount;
+        }
+      }
+
+      // Maintenance must be funded before year-end ETF operations.
+      // If the current cash balance is insufficient, sell ETF first so the
+      // payment is explicitly covered and ETF returns are not earned on the
+      // portion that must be liquidated.
+      if (maintenanceCashOut > 0 && maintenanceCashOut > foundationCash && foundationEtfBalance > 0) {
+        const maintenanceShortfall = maintenanceCashOut - foundationCash;
+        const maintSale = computePartialEtfSale(
+          maintenanceShortfall,
+          foundationEtfBalance,
+          foundationEtfContributions,
+          foundationEtfTaxedGains,
+          input.foundationEtfTaxRate,
+          input.foundationEtfPartialExemptionRate,
+        );
+        maintenanceEtfSaleGross = maintSale.grossSale;
+        maintenanceEtfSaleTax = maintSale.saleTax;
+        maintenanceEtfSaleNet = maintSale.netProceeds;
+        foundationCash += maintSale.netProceeds;
+        foundationEtfBalance -= maintSale.grossSale;
+        foundationEtfContributions *= (1 - maintSale.fraction);
+        foundationEtfTaxedGains *= (1 - maintSale.fraction);
+      }
+
       annualInterest = remainingLoan * input.loanInterestRate;
       annualDepreciation = Math.min(
         remainingDepreciableBuildingValue,
-        depreciableBuildingBase * input.depreciationRate,
+        effectiveDepreciableBase * input.depreciationRate,
       );
       taxableResult =
         annualRent -
         input.annualAdminCost -
         annualInterest -
-        annualDepreciation;
+        annualDepreciation -
+        maintenanceFullDeduction;
       // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
       // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
       foundationCashFlow =
         annualRent -
         input.annualAdminCost -
-        annualInterest;
+        annualInterest -
+        maintenanceCashOut;
       const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
 
       if (input.bulletLoan) {
@@ -777,12 +879,67 @@ function calculateProjection(input) {
       foundationCash += foundationCashFlow;
     }
 
+    // Körperschaftsteuer (KSt 15 % + SolZ 5,5 %) mit Verlustvortrag (§ 10d EStG i.V.m. § 8 KStG)
+    let kstUsedCarryforward = 0;
+    let kstBase = 0;
+    let kstAmount = 0;
+    if (taxableResult >= 0) {
+      kstUsedCarryforward = Math.min(taxLossCarryforward, taxableResult);
+      kstBase = taxableResult - kstUsedCarryforward;
+      taxLossCarryforward -= kstUsedCarryforward;
+      kstAmount = kstBase * KST_COMBINED_RATE;
+      foundationCash -= kstAmount;
+    } else {
+      taxLossCarryforward += Math.abs(taxableResult);
+    }
+
+    // Vergleichsszenario: Privatvermietung – Instandhaltungsereignisse
+    let privateMaintCashOut = 0;
+    let privateMaintFullDeduction = 0;
+    let privateMaintAfaAddition = 0;
+    let privateMaintEtfSaleGross = 0;
+    let privateMaintEtfSaleTax = 0;
+    let privateMaintEtfSaleNet = 0;
+
+    for (const evt of (input.maintenanceEvents ?? []).filter((e) => e.year === year)) {
+      privateMaintCashOut += evt.amount;
+      if (evt.type === "full") {
+        privateMaintFullDeduction += evt.amount;
+      } else {
+        privateMaintAfaAddition += evt.amount;
+        privateEffectiveDepreciableBase += evt.amount;
+        privateRemainingDepreciableBuilding += evt.amount;
+      }
+    }
+
+    // Fund private maintenance from compare ETF if cash is insufficient
+    if (privateMaintCashOut > 0 && privateMaintCashOut > privateCash && compareEtfBalance > 0) {
+      const privateMaintenanceShortfall = privateMaintCashOut - privateCash;
+      const privateMaintSale = computePartialEtfSale(
+        privateMaintenanceShortfall,
+        compareEtfBalance,
+        compareEtfContributions,
+        compareEtfTaxedGains,
+        input.privateEtfTaxRate,
+        input.privateEtfPartialExemptionRate,
+      );
+      privateMaintEtfSaleGross = privateMaintSale.grossSale;
+      privateMaintEtfSaleTax = privateMaintSale.saleTax;
+      privateMaintEtfSaleNet = privateMaintSale.netProceeds;
+      privateCash += privateMaintSale.netProceeds;
+      compareEtfBalance -= privateMaintSale.grossSale;
+      compareEtfContributions *= 1 - privateMaintSale.fraction;
+      compareEtfTaxedGains *= 1 - privateMaintSale.fraction;
+    }
+
+    privateCash -= privateMaintCashOut;
+
     // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
     const privateDepreciation = Math.min(
       privateRemainingDepreciableBuilding,
-      privateDepreciableBuildingBase * input.depreciationRate,
+      privateEffectiveDepreciableBase * input.depreciationRate,
     );
-    const privateTaxableRentalIncome = annualRent - privateDepreciation;
+    const privateTaxableRentalIncome = annualRent - privateDepreciation - privateMaintFullDeduction;
     const privateIncomeTax = privateTaxableRentalIncome * yearPersonalTaxRate;
     privateCash += annualRent - privateIncomeTax;
     privateRemainingDepreciableBuilding = Math.max(
@@ -933,6 +1090,16 @@ function calculateProjection(input) {
       guvInterest: annualInterest,
       guvDepreciation: annualDepreciation,
       guvResult: taxableResult,
+      guvMaintenanceCashOut: maintenanceCashOut,
+      guvMaintenanceFullDeduction: maintenanceFullDeduction,
+      guvMaintenanceAfaAddition: maintenanceAfaAddition,
+      guvMaintenanceEtfSaleGross: maintenanceEtfSaleGross,
+      guvMaintenanceEtfSaleTax: maintenanceEtfSaleTax,
+      guvMaintenanceEtfSaleNet: maintenanceEtfSaleNet,
+      guvKstAmount: kstAmount,
+      guvKstBase: kstBase,
+      guvKstUsedCarryforward: kstUsedCarryforward,
+      guvLossCarryforward: taxLossCarryforward,
       loanAtStartOfYear,
       scheduledRepayment,
       extraRepayment,
@@ -968,6 +1135,12 @@ function calculateProjection(input) {
       compareGrossEtfReturn: compareEtf.grossEtfReturn,
       compareVorabTax: compareEtf.vorabTax,
       compareEtfSaleTax: compareEtf.saleTax,
+      compareMaintenanceCashOut: privateMaintCashOut,
+      compareMaintenanceFullDeduction: privateMaintFullDeduction,
+      compareMaintenanceAfaAddition: privateMaintAfaAddition,
+      compareMaintenanceEtfSaleGross: privateMaintEtfSaleGross,
+      compareMaintenanceEtfSaleTax: privateMaintEtfSaleTax,
+      compareMaintenanceEtfSaleNet: privateMaintEtfSaleNet,
       // Vergleichsvermögen ETF-only (ohne Immobilie, gleiches Startkapital)
       etfOnlyWealth: etfOnlyCash + etfOnlyEtf.etfLiquidationValue,
       etfOnlyEtfBalance,
@@ -1014,6 +1187,9 @@ const DEFAULT_RESULT = calculateProjection({
     validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS).parsedSteps,
     true,
     false,
+    false,
+    false,
+    [],
   ),
 });
 
@@ -1051,6 +1227,7 @@ export default function Home() {
       bulletLoanShowReturn,
       lenderIsTenant,
       tenantRentFromExternalFunds,
+      maintenanceEvents,
       result,
     },
     setState,
@@ -1067,6 +1244,7 @@ export default function Home() {
     bulletLoanShowReturn: false,
     lenderIsTenant: false,
     tenantRentFromExternalFunds: false,
+    maintenanceEvents: [],
     result: DEFAULT_RESULT,
   });
 
@@ -1088,8 +1266,10 @@ export default function Home() {
       const nextBulletLoanShowReturn = parsed.bulletLoanShowReturn ?? false;
       const nextLenderIsTenant = parsed.lenderIsTenant ?? false;
       const nextTenantRentFromExternalFunds = parsed.tenantRentFromExternalFunds ?? false;
+      const nextMaintenanceEvents = parsed.maintenanceEvents ?? [];
       const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, nextIncludeRealEstate), nextBulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextPersonalTaxSteps);
+      const nextMaintenanceValidation = validateMaintenanceEvents(nextMaintenanceEvents);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({
@@ -1105,6 +1285,7 @@ export default function Home() {
         bulletLoanShowReturn: nextBulletLoanShowReturn,
         lenderIsTenant: nextLenderIsTenant,
         tenantRentFromExternalFunds: nextTenantRentFromExternalFunds,
+        maintenanceEvents: nextMaintenanceEvents,
         result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
@@ -1116,6 +1297,7 @@ export default function Home() {
                 nextBulletLoan,
                 nextLenderIsTenant,
                 nextTenantRentFromExternalFunds,
+                nextMaintenanceValidation.parsedEvents,
               ),
             )
           : DEFAULT_RESULT,
@@ -1144,6 +1326,7 @@ export default function Home() {
             bulletLoanShowReturn,
             lenderIsTenant,
             tenantRentFromExternalFunds,
+            maintenanceEvents,
           }),
         );
       } catch {
@@ -1164,6 +1347,7 @@ export default function Home() {
     bulletLoanShowReturn,
     lenderIsTenant,
     tenantRentFromExternalFunds,
+    maintenanceEvents,
   ]);
 
   const validation = useMemo(
@@ -1171,8 +1355,10 @@ export default function Home() {
     [formValues, includeRealEstate, bulletLoan],
   );
   const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
+  const maintenanceValidation = useMemo(() => validateMaintenanceEvents(maintenanceEvents), [maintenanceEvents]);
   const hasInvalidFields = validation.invalidIds.length > 0;
   const hasInvalidTaxSteps = taxStepsValidation.parsedSteps === null;
+  const hasInvalidMaintenanceEvents = maintenanceValidation.invalidIndices.length > 0;
   const selectedRelationship = useMemo(
     () => getRelationshipOption(relationshipId),
     [relationshipId],
@@ -1489,6 +1675,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1515,6 +1702,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1540,6 +1728,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1565,6 +1754,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1590,6 +1780,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1620,6 +1811,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1648,6 +1840,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1677,6 +1870,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1704,6 +1898,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1731,6 +1926,7 @@ export default function Home() {
                 checked,
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1767,6 +1963,7 @@ export default function Home() {
                 currentState.bulletLoan,
                 checked,
                 nextTenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -1792,6 +1989,93 @@ export default function Home() {
                 currentState.bulletLoan,
                 currentState.lenderIsTenant,
                 checked,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleAddMaintenanceEvent() {
+    setState((currentState) => {
+      const nextEvents = [
+        ...currentState.maintenanceEvents,
+        { year: "1", amount: "5000", type: "full" },
+      ];
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        maintenanceEvents: nextEvents,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(nextEvents).parsedEvents,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleRemoveMaintenanceEvent(index) {
+    setState((currentState) => {
+      const nextEvents = currentState.maintenanceEvents.filter((_, i) => i !== index);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        maintenanceEvents: nextEvents,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(nextEvents).parsedEvents,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleMaintenanceEventChange(index, field, value) {
+    setState((currentState) => {
+      const nextEvents = currentState.maintenanceEvents.map((evt, i) =>
+        i === index ? { ...evt, [field]: value } : evt,
+      );
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        maintenanceEvents: nextEvents,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(nextEvents).parsedEvents,
               ),
             )
           : currentState.result,
@@ -2087,6 +2371,82 @@ export default function Home() {
               </label>
             </div>
           )}
+          {includeRealEstate && (
+            <div className={styles.taxStepsSection}>
+              <span className={styles.fieldLabel}>Ereignisse: Instandhaltung</span>
+              <p className={styles.hint}>
+                Einmalige Instandhaltungskosten eintragen, die in einem bestimmten Jahr anfallen.
+                Wählen Sie, ob die Kosten steuerlich voll abzugsfähig sind oder über 2 % AfA abgeschrieben werden.
+                Eine Umlage auf den Mieter ist nicht vorgesehen.
+              </p>
+              {maintenanceEvents.map((evt, index) => {
+                const isInvalid = maintenanceValidation.invalidIndices.includes(index);
+                return (
+                  <div key={index} className={styles.taxStepRow}>
+                    <div className={styles.taxStepField}>
+                      <label htmlFor={`maintYear_${index}`} className={styles.taxStepLabel}>Jahr</label>
+                      <input
+                        id={`maintYear_${index}`}
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={evt.year}
+                        onChange={(event) => handleMaintenanceEventChange(index, "year", event.target.value)}
+                        className={`${styles.fieldInput} ${isInvalid ? styles.fieldInputInvalid : ""}`.trim()}
+                        aria-invalid={isInvalid}
+                        required
+                      />
+                    </div>
+                    <div className={styles.taxStepField}>
+                      <label htmlFor={`maintAmount_${index}`} className={styles.taxStepLabel}>Betrag (€)</label>
+                      <input
+                        id={`maintAmount_${index}`}
+                        type="number"
+                        min="0.01"
+                        step="100"
+                        value={evt.amount}
+                        onChange={(event) => handleMaintenanceEventChange(index, "amount", event.target.value)}
+                        className={`${styles.fieldInput} ${isInvalid ? styles.fieldInputInvalid : ""}`.trim()}
+                        aria-invalid={isInvalid}
+                        required
+                      />
+                    </div>
+                    <div className={styles.taxStepField}>
+                      <label htmlFor={`maintType_${index}`} className={styles.taxStepLabel}>Steuerliche Behandlung</label>
+                      <select
+                        id={`maintType_${index}`}
+                        value={evt.type}
+                        onChange={(event) => handleMaintenanceEventChange(index, "type", event.target.value)}
+                        className={styles.fieldInput}
+                      >
+                        <option value="full">Voll abzugsfähig (Sofortabzug)</option>
+                        <option value="afa">2 % AfA (Abschreibung)</option>
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMaintenanceEvent(index)}
+                      className={styles.taxStepRemoveButton}
+                    >
+                      Entfernen
+                    </button>
+                  </div>
+                );
+              })}
+              {hasInvalidMaintenanceEvents && (
+                <p className={styles.validationMessage}>
+                  Bitte korrigieren Sie die rot markierten Instandhaltungseinträge (Jahr ≥ 1, Betrag &gt; 0).
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleAddMaintenanceEvent}
+                className={styles.taxStepAddButton}
+              >
+                + Instandhaltung hinzufügen
+              </button>
+            </div>
+          )}
           <p className={styles.hint}>
             {bulletLoan
               ? `Endfälliges Darlehen: Während der Laufzeit (${result.input.loanTermYears} Jahre) werden nur Zinsen auf die volle Darlehenssumme gezahlt; die Tilgung erfolgt als Einmalzahlung am Laufzeitende.`
@@ -2243,6 +2603,11 @@ export default function Home() {
                     🏠 Immobilie in diesem Jahr erworben (ETF-Teilverkauf {formatCurrency(row.etfSaleForPurchase)}, davon Steuer {formatCurrency(row.etfSaleTaxForPurchase)}, Nettomittel {formatCurrency(row.etfSaleNetForPurchase)}; Darlehen {formatCurrency(result.input.loanAmount)} aufgenommen).
                   </p>
                 )}
+                {row.guvMaintenanceEtfSaleGross > 0 && (
+                  <p className={styles.hint}>
+                    🔧 Instandhaltungsfinanzierung: ETF-Teilverkauf {formatCurrency(row.guvMaintenanceEtfSaleGross)} (Steuer {formatCurrency(row.guvMaintenanceEtfSaleTax)}, Nettomittel {formatCurrency(row.guvMaintenanceEtfSaleNet)}) zur Deckung der Instandhaltungskosten {formatCurrency(row.guvMaintenanceCashOut)}.
+                  </p>
+                )}
                 {result.deferredPurchase && !row.propertyOwned && row.year > 0 && (
                   <p className={styles.hint}>
                     📈 ETF-Phase: Noch kein Immobilienkauf – Kapital in ETF investiert, laufende Kosten werden aus Erträgen gedeckt.
@@ -2263,7 +2628,7 @@ export default function Home() {
                                 {formatCurrency(row.foundationCashFlow)}
                               </dd>
                               {row.propertyOwned ? (
-                                <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen)</small>
+                                <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen){row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""}</small>
                               ) : (
                                 <small className={styles.formula}>− {formatCurrency(row.guvAdminCost)} (Verwaltungskosten, keine Mieteinnahmen)</small>
                               )}
@@ -2398,6 +2763,18 @@ export default function Home() {
                           <dd>{formatCurrency(row.compareWealth)}</dd>
                           <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
                         </div>
+                        {row.compareMaintenanceCashOut > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Instandhaltung (Privat)</dt>
+                            <dd className={styles.negative}>{formatCurrency(row.compareMaintenanceCashOut)}</dd>
+                            <small className={styles.formula}>
+                              {row.compareMaintenanceFullDeduction > 0 && `${formatCurrency(row.compareMaintenanceFullDeduction)} voll abzugsfähig`}
+                              {row.compareMaintenanceFullDeduction > 0 && row.compareMaintenanceAfaAddition > 0 && "; "}
+                              {row.compareMaintenanceAfaAddition > 0 && `${formatCurrency(row.compareMaintenanceAfaAddition)} AfA-aktiviert`}
+                              {row.compareMaintenanceEtfSaleGross > 0 && `; ETF-Verkauf ${formatCurrency(row.compareMaintenanceEtfSaleGross)} (Steuer ${formatCurrency(row.compareMaintenanceEtfSaleTax)}, Netto ${formatCurrency(row.compareMaintenanceEtfSaleNet)})`}
+                            </small>
+                          </div>
+                        )}
                       </dl>
                     </div>
                     {includeRealEstate && (
@@ -2448,16 +2825,48 @@ export default function Home() {
                             <dt>AfA</dt>
                             <dd>{formatCurrency(row.guvDepreciation)}</dd>
                             {row.propertyOwned && (
-                              <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
+                              <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz){row.guvMaintenanceAfaAddition > 0 ? ` + ${formatCurrency(row.guvMaintenanceAfaAddition)} (neue AfA-Basis Instandhaltung)` : ""}</small>
                             )}
                           </div>
+                          {row.guvMaintenanceCashOut > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Instandhaltung</dt>
+                              <dd className={styles.negative}>{formatCurrency(row.guvMaintenanceCashOut)}</dd>
+                              <small className={styles.formula}>
+                                {row.guvMaintenanceFullDeduction > 0 && `${formatCurrency(row.guvMaintenanceFullDeduction)} voll abzugsfähig`}
+                                {row.guvMaintenanceFullDeduction > 0 && row.guvMaintenanceAfaAddition > 0 && "; "}
+                                {row.guvMaintenanceAfaAddition > 0 && `${formatCurrency(row.guvMaintenanceAfaAddition)} AfA-aktiviert (Abschreibung über Folgejahre)`}
+                              </small>
+                            </div>
+                          )}
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Jahresüberschuss/-fehlbetrag</dt>
                             <dd className={row.guvResult < 0 ? styles.negative : styles.positive}>
                               {formatCurrency(row.guvResult)}
                             </dd>
-                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>
+                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA){row.guvMaintenanceFullDeduction > 0 ? ` − ${formatCurrency(row.guvMaintenanceFullDeduction)} (Instandhaltung Sofortabzug)` : ""}</small>
                           </div>
+                          {row.year > 0 && row.guvKstUsedCarryforward > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Verlustvortrag (verrechnet)</dt>
+                              <dd className={styles.negative}>− {formatCurrency(row.guvKstUsedCarryforward)}</dd>
+                              <small className={styles.formula}>Kumulierter Verlustvortrag aus Vorjahren reduziert das zu versteuernde Einkommen</small>
+                            </div>
+                          )}
+                          {row.year > 0 && row.guvKstAmount > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Körperschaftsteuer + SolZ</dt>
+                              <dd className={styles.negative}>− {formatCurrency(row.guvKstAmount)}</dd>
+                              <small className={styles.formula}>{formatCurrency(row.guvKstBase)} (zu versteuerndes Einkommen) × {formatPercent(KST_COMBINED_RATE * 100)} (KSt {formatPercent(KST_RATE * 100)} + SolZ {formatPercent(SOLZ_ON_KST * 100)})</small>
+                            </div>
+                          )}
+                          {row.year > 0 && row.guvLossCarryforward > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Verlustvortrag (kumuliert)</dt>
+                              <dd>{formatCurrency(row.guvLossCarryforward)}</dd>
+                              <small className={styles.formula}>Noch nicht verrechnete steuerliche Verluste aus Vorjahren</small>
+                            </div>
+                          )}
                         </dl>
                       </div>
                       <div className={styles.guvColumn}>
@@ -2522,9 +2931,9 @@ export default function Home() {
                           <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                         )
                       ) : row.propertyBoughtThisYear ? (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf) + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""}{row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       ) : (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""} + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen){row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       )}
                     </div>
                     <div className={styles.dataItem}>
@@ -2535,7 +2944,9 @@ export default function Home() {
                           {row.propertyBoughtThisYear
                             ? `Nach Teilverkauf für Immobilienkauf (${formatCurrency(row.etfSaleForPurchase)} verkauft): `
                             : ""}
-                          Vorjahresbestand{row.foundationEtfDeficitSaleGross > 0
+                          Vorjahresbestand{row.guvMaintenanceEtfSaleGross > 0
+                            ? ` − ${formatCurrency(row.guvMaintenanceEtfSaleGross)} (ETF-Verkauf Instandhaltungsfinanzierung, Steuer ${formatCurrency(row.guvMaintenanceEtfSaleTax)})`
+                            : ""}{row.foundationEtfDeficitSaleGross > 0
                             ? ` − ${formatCurrency(row.foundationEtfDeficitSaleGross)} (Teilverkauf bei Liquiditätsbedarf, Steuer ${formatCurrency(row.foundationEtfDeficitSaleTax)})`
                             : ""} + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + {formatCurrency(row.foundationGrossEtfReturn)} (Brutto-Rendite) − {formatCurrency(row.foundationVorabTax)} (Vorabpauschale)
                         </small>

@@ -1049,10 +1049,10 @@ function calculateProjection(input) {
       personEtfContributions = 0;
       personEtfTaxedGains = 0;
 
-      // Neues Darlehen = gesamtes verfügbares Personenvermögen (Darlehen + Netto-Zinsen)
-      const newLoanAmount = personCash;
-      foundationCash += newLoanAmount;
-      remainingLoan = newLoanAmount;
+      // Neues Darlehen = gesamtes verfügbares Personenvermögen (Darlehen + Netto-Zinsen + ETF-Rendite)
+      const reinvestmentAmount = personCash;
+      foundationCash += reinvestmentAmount;
+      remainingLoan = reinvestmentAmount;
       personCash = 0;
 
       // Kumulative Zinstracker für den nächsten Zyklus zurücksetzen

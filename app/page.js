@@ -1875,33 +1875,9 @@ export default function Home() {
               Immobilie in die Rechnung einbeziehen
             </label>
           </div>
-          {includeRealEstate && (
-            <div className={styles.bundeslandRow}>
-              <label htmlFor="bundesland" className={styles.fieldLabel}>
-                Bundesland (setzt Grunderwerbsteuer-Satz)
-              </label>
-              <select
-                id="bundesland"
-                value={bundesland ?? ""}
-                onChange={(event) => handleBundeslandChange(event.target.value)}
-                className={styles.fieldInput}
-              >
-                <option value="">— Manuell eingeben —</option>
-                {BUNDESLAENDER.map((bl) => (
-                  <option key={bl.name} value={bl.name}>
-                    {bl.name} ({bl.rate} %)
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className={styles.grid}>
-            {FIELD_DEFINITIONS.map((field) => {
-              if (field.realEstate && !includeRealEstate) return null;
-              if (field.id === "loanRepaymentRate" && bulletLoan) return null;
-              if (field.conditionalField === "bulletLoan" && !bulletLoan) return null;
+          {(() => {
+            const renderField = (field) => {
               const isInvalid = validation.invalidIds.includes(field.id);
-
               return (
                 <div key={field.id}>
                   <label htmlFor={field.id} className={styles.fieldLabel}>
@@ -1921,8 +1897,48 @@ export default function Home() {
                   />
                 </div>
               );
-            })}
-          </div>
+            };
+
+            const nonRealEstateFields = FIELD_DEFINITIONS.filter(
+              (f) =>
+                !f.realEstate &&
+                !(f.id === "loanRepaymentRate" && bulletLoan) &&
+                !(f.conditionalField === "bulletLoan" && !bulletLoan),
+            );
+
+            const realEstateFields = FIELD_DEFINITIONS.filter((f) => f.realEstate);
+
+            return (
+              <>
+                <div className={styles.grid}>
+                  {nonRealEstateFields.map(renderField)}
+                </div>
+                {includeRealEstate && (
+                  <div className={styles.realEstateFields}>
+                    <div className={styles.bundeslandRow}>
+                      <label htmlFor="bundesland" className={styles.fieldLabel}>
+                        Bundesland (setzt Grunderwerbsteuer-Satz)
+                      </label>
+                      <select
+                        id="bundesland"
+                        value={bundesland ?? ""}
+                        onChange={(event) => handleBundeslandChange(event.target.value)}
+                        className={styles.fieldInput}
+                      >
+                        <option value="">— Manuell eingeben —</option>
+                        {BUNDESLAENDER.map((bl) => (
+                          <option key={bl.name} value={bl.name}>
+                            {bl.name} ({bl.rate} %)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {realEstateFields.map(renderField)}
+                  </div>
+                )}
+              </>
+            );
+          })()}
           <div className={styles.taxStepsSection}>
             <span className={styles.fieldLabel}>Persönlicher Steuersatz der Person (%)</span>
             <p className={styles.hint}>

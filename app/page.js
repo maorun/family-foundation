@@ -770,6 +770,11 @@ function calculateProjection(input) {
 
     const loanAtStartOfYear = remainingLoan;
     const prevFoundationCash = foundationCash;
+    const isBulletRepaymentYear = input.bulletLoan && (
+      input.bulletLoanReinvest
+        ? (year % input.loanTermYears === 0 && year > 0)
+        : (year === input.loanTermYears)
+    );
 
     if (foundationOwnsProperty) {
       // Process maintenance events for this year
@@ -834,9 +839,6 @@ function calculateProjection(input) {
       if (input.bulletLoan) {
         // Endfälliges Darlehen: kein Tilgungsplan, volle Rückzahlung am Laufzeitende
         // Bei Wiederanlage: Rückzahlung am Ende jeder Laufzeit (year % loanTermYears === 0)
-        const isBulletRepaymentYear = input.bulletLoanReinvest
-          ? (year % input.loanTermYears === 0 && year > 0)
-          : (year === input.loanTermYears);
         scheduledRepaymentTarget = isBulletRepaymentYear ? remainingLoan : 0;
         scheduledRepayment = scheduledRepaymentTarget;
         extraRepayment = 0;
@@ -1016,12 +1018,7 @@ function calculateProjection(input) {
     // Darlehen in die Stiftung angelegt. Die ETFs des Darlehensgebers werden nicht
     // verkauft – der in personCash liegende Betrag (zurückgezahltes Kapital +
     // diesjähriger Netto-Zins) ist genau der Wiederanlagebetrag.
-    if (
-      input.bulletLoan &&
-      input.bulletLoanReinvest &&
-      year % input.loanTermYears === 0 &&
-      year > 0
-    ) {
+    if (input.bulletLoanReinvest && isBulletRepaymentYear) {
       const reinvestmentAmount = personCash;
       foundationCash += reinvestmentAmount;
       remainingLoan = reinvestmentAmount;

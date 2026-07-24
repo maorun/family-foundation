@@ -683,6 +683,9 @@ function calculateProjection(input) {
       guvKstBase: 0,
       guvKstUsedCarryforward: 0,
       guvLossCarryforward: 0,
+      guvMaintenanceEtfSaleGross: 0,
+      guvMaintenanceEtfSaleTax: 0,
+      guvMaintenanceEtfSaleNet: 0,
     },
   ];
 
@@ -751,6 +754,9 @@ function calculateProjection(input) {
     let maintenanceCashOut = 0;
     let maintenanceFullDeduction = 0;
     let maintenanceAfaAddition = 0;
+    let maintenanceEtfSaleGross = 0;
+    let maintenanceEtfSaleTax = 0;
+    let maintenanceEtfSaleNet = 0;
 
     const loanAtStartOfYear = remainingLoan;
     const prevFoundationCash = foundationCash;
@@ -770,6 +776,29 @@ function calculateProjection(input) {
           effectiveDepreciableBase += evt.amount;
           remainingDepreciableBuildingValue += evt.amount;
         }
+      }
+
+      // Maintenance must be funded before year-end ETF operations.
+      // If the current cash balance is insufficient, sell ETF first so the
+      // payment is explicitly covered and ETF returns are not earned on the
+      // portion that must be liquidated.
+      if (maintenanceCashOut > 0 && maintenanceCashOut > foundationCash && foundationEtfBalance > 0) {
+        const maintenanceShortfall = maintenanceCashOut - foundationCash;
+        const maintSale = computePartialEtfSale(
+          maintenanceShortfall,
+          foundationEtfBalance,
+          foundationEtfContributions,
+          foundationEtfTaxedGains,
+          input.foundationEtfTaxRate,
+          input.foundationEtfPartialExemptionRate,
+        );
+        maintenanceEtfSaleGross = maintSale.grossSale;
+        maintenanceEtfSaleTax = maintSale.saleTax;
+        maintenanceEtfSaleNet = maintSale.netProceeds;
+        foundationCash += maintSale.netProceeds;
+        foundationEtfBalance -= maintSale.grossSale;
+        foundationEtfContributions *= (1 - maintSale.fraction);
+        foundationEtfTaxedGains *= (1 - maintSale.fraction);
       }
 
       annualInterest = remainingLoan * input.loanInterestRate;
@@ -1015,6 +1044,9 @@ function calculateProjection(input) {
       guvMaintenanceCashOut: maintenanceCashOut,
       guvMaintenanceFullDeduction: maintenanceFullDeduction,
       guvMaintenanceAfaAddition: maintenanceAfaAddition,
+      guvMaintenanceEtfSaleGross: maintenanceEtfSaleGross,
+      guvMaintenanceEtfSaleTax: maintenanceEtfSaleTax,
+      guvMaintenanceEtfSaleNet: maintenanceEtfSaleNet,
       guvKstAmount: kstAmount,
       guvKstBase: kstBase,
       guvKstUsedCarryforward: kstUsedCarryforward,
@@ -2500,6 +2532,11 @@ export default function Home() {
                     🏠 Immobilie in diesem Jahr erworben (ETF-Teilverkauf {formatCurrency(row.etfSaleForPurchase)}, davon Steuer {formatCurrency(row.etfSaleTaxForPurchase)}, Nettomittel {formatCurrency(row.etfSaleNetForPurchase)}; Darlehen {formatCurrency(result.input.loanAmount)} aufgenommen).
                   </p>
                 )}
+                {row.guvMaintenanceEtfSaleGross > 0 && (
+                  <p className={styles.hint}>
+                    🔧 Instandhaltungsfinanzierung: ETF-Teilverkauf {formatCurrency(row.guvMaintenanceEtfSaleGross)} (Steuer {formatCurrency(row.guvMaintenanceEtfSaleTax)}, Nettomittel {formatCurrency(row.guvMaintenanceEtfSaleNet)}) zur Deckung der Instandhaltungskosten {formatCurrency(row.guvMaintenanceCashOut)}.
+                  </p>
+                )}
                 {result.deferredPurchase && !row.propertyOwned && row.year > 0 && (
                   <p className={styles.hint}>
                     📈 ETF-Phase: Noch kein Immobilienkauf – Kapital in ETF investiert, laufende Kosten werden aus Erträgen gedeckt.
@@ -2520,7 +2557,7 @@ export default function Home() {
                                 {formatCurrency(row.foundationCashFlow)}
                               </dd>
                               {row.propertyOwned ? (
-                                <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen)</small>
+                                <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen){row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""}</small>
                               ) : (
                                 <small className={styles.formula}>− {formatCurrency(row.guvAdminCost)} (Verwaltungskosten, keine Mieteinnahmen)</small>
                               )}
@@ -2811,9 +2848,9 @@ export default function Home() {
                           <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                         )
                       ) : row.propertyBoughtThisYear ? (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf) + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""}{row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       ) : (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""} + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen){row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
                       )}
                     </div>
                     <div className={styles.dataItem}>
@@ -2824,7 +2861,9 @@ export default function Home() {
                           {row.propertyBoughtThisYear
                             ? `Nach Teilverkauf für Immobilienkauf (${formatCurrency(row.etfSaleForPurchase)} verkauft): `
                             : ""}
-                          Vorjahresbestand{row.foundationEtfDeficitSaleGross > 0
+                          Vorjahresbestand{row.guvMaintenanceEtfSaleGross > 0
+                            ? ` − ${formatCurrency(row.guvMaintenanceEtfSaleGross)} (ETF-Verkauf Instandhaltungsfinanzierung, Steuer ${formatCurrency(row.guvMaintenanceEtfSaleTax)})`
+                            : ""}{row.foundationEtfDeficitSaleGross > 0
                             ? ` − ${formatCurrency(row.foundationEtfDeficitSaleGross)} (Teilverkauf bei Liquiditätsbedarf, Steuer ${formatCurrency(row.foundationEtfDeficitSaleTax)})`
                             : ""} + {formatCurrency(row.foundationEtfInvestment)} (neue ETF-Investition) + {formatCurrency(row.foundationGrossEtfReturn)} (Brutto-Rendite) − {formatCurrency(row.foundationVorabTax)} (Vorabpauschale)
                         </small>

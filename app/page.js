@@ -413,6 +413,7 @@ function createProjectionInput(
   lenderIsTenant = false,
   tenantRentFromExternalFunds = false,
   maintenanceEvents = [],
+  bulletLoanReinvest = false,
 ) {
   return {
     ...validatedInput,
@@ -425,6 +426,7 @@ function createProjectionInput(
     lenderIsTenant,
     tenantRentFromExternalFunds,
     maintenanceEvents,
+    bulletLoanReinvest,
   };
 }
 
@@ -768,6 +770,11 @@ function calculateProjection(input) {
 
     const loanAtStartOfYear = remainingLoan;
     const prevFoundationCash = foundationCash;
+    const isBulletRepaymentYear = input.bulletLoan && (
+      input.bulletLoanReinvest
+        ? (year % input.loanTermYears === 0 && year > 0)
+        : (year === input.loanTermYears)
+    );
 
     if (foundationOwnsProperty) {
       // Process maintenance events for this year
@@ -831,7 +838,8 @@ function calculateProjection(input) {
 
       if (input.bulletLoan) {
         // Endfälliges Darlehen: kein Tilgungsplan, volle Rückzahlung am Laufzeitende
-        scheduledRepaymentTarget = year === input.loanTermYears ? remainingLoan : 0;
+        // Bei Wiederanlage: Rückzahlung am Ende jeder Laufzeit (year % loanTermYears === 0)
+        scheduledRepaymentTarget = isBulletRepaymentYear ? remainingLoan : 0;
         scheduledRepayment = scheduledRepaymentTarget;
         extraRepayment = 0;
       } else {
@@ -1004,6 +1012,22 @@ function calculateProjection(input) {
     foundationEtfBalance = foundationEtf.etfBalanceAfterTax;
     foundationEtfContributions = foundationEtf.etfContributionsAfterInvestment;
     foundationEtfTaxedGains = foundationEtf.etfTaxedGainsAfterYear;
+
+    // Wiederanlage des endfälligen Darlehens: Am Ende jeder Laufzeit wird nur das
+    // zurückgegebene Darlehen plus die Netto-Zinsen (nach Steuer) wieder als neues
+    // Darlehen in die Stiftung angelegt. Die ETFs des Darlehensgebers werden nicht
+    // verkauft – der in personCash liegende Betrag (zurückgezahltes Kapital +
+    // diesjähriger Netto-Zins) ist genau der Wiederanlagebetrag.
+    if (input.bulletLoanReinvest && isBulletRepaymentYear) {
+      const reinvestmentAmount = personCash;
+      foundationCash += reinvestmentAmount;
+      remainingLoan = reinvestmentAmount;
+      personCash = 0;
+
+      // Kumulative Zinstracker für den nächsten Zyklus zurücksetzen
+      personCumulativeGrossInterest = 0;
+      personCumulativeInterestTax = 0;
+    }
 
     const interestAllowanceUsed = Math.min(annualInterest, input.saverAllowance);
     const personEtfSaverAllowance = input.saverAllowance - interestAllowanceUsed;
@@ -1225,6 +1249,7 @@ export default function Home() {
       includeRealEstate,
       bulletLoan,
       bulletLoanShowReturn,
+      bulletLoanReinvest,
       lenderIsTenant,
       tenantRentFromExternalFunds,
       maintenanceEvents,
@@ -1242,6 +1267,7 @@ export default function Home() {
     includeRealEstate: false,
     bulletLoan: false,
     bulletLoanShowReturn: false,
+    bulletLoanReinvest: false,
     lenderIsTenant: false,
     tenantRentFromExternalFunds: false,
     maintenanceEvents: [],
@@ -1264,6 +1290,7 @@ export default function Home() {
       const nextIncludeRealEstate = parsed.includeRealEstate ?? false;
       const nextBulletLoan = parsed.bulletLoan ?? false;
       const nextBulletLoanShowReturn = parsed.bulletLoanShowReturn ?? false;
+      const nextBulletLoanReinvest = parsed.bulletLoanReinvest ?? false;
       const nextLenderIsTenant = parsed.lenderIsTenant ?? false;
       const nextTenantRentFromExternalFunds = parsed.tenantRentFromExternalFunds ?? false;
       const nextMaintenanceEvents = parsed.maintenanceEvents ?? [];
@@ -1283,6 +1310,7 @@ export default function Home() {
         includeRealEstate: nextIncludeRealEstate,
         bulletLoan: nextBulletLoan,
         bulletLoanShowReturn: nextBulletLoanShowReturn,
+        bulletLoanReinvest: nextBulletLoanReinvest,
         lenderIsTenant: nextLenderIsTenant,
         tenantRentFromExternalFunds: nextTenantRentFromExternalFunds,
         maintenanceEvents: nextMaintenanceEvents,
@@ -1298,6 +1326,7 @@ export default function Home() {
                 nextLenderIsTenant,
                 nextTenantRentFromExternalFunds,
                 nextMaintenanceValidation.parsedEvents,
+                nextBulletLoanReinvest,
               ),
             )
           : DEFAULT_RESULT,
@@ -1324,6 +1353,7 @@ export default function Home() {
             includeRealEstate,
             bulletLoan,
             bulletLoanShowReturn,
+            bulletLoanReinvest,
             lenderIsTenant,
             tenantRentFromExternalFunds,
             maintenanceEvents,
@@ -1345,6 +1375,7 @@ export default function Home() {
     includeRealEstate,
     bulletLoan,
     bulletLoanShowReturn,
+    bulletLoanReinvest,
     lenderIsTenant,
     tenantRentFromExternalFunds,
     maintenanceEvents,
@@ -1676,6 +1707,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1703,6 +1735,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1729,6 +1762,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1755,6 +1789,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1781,6 +1816,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1812,6 +1848,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1841,6 +1878,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1871,6 +1909,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1899,6 +1938,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1913,8 +1953,9 @@ export default function Home() {
       return {
         ...currentState,
         bulletLoan: checked,
-        // When switching off bullet loan, also reset show-return
+        // When switching off bullet loan, also reset show-return and reinvest
         bulletLoanShowReturn: checked ? currentState.bulletLoanShowReturn : false,
+        bulletLoanReinvest: checked ? currentState.bulletLoanReinvest : false,
         result: nextValidation.input && nextTaxValidation.parsedSteps
           ? calculateProjection(
               createProjectionInput(
@@ -1927,6 +1968,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                checked ? currentState.bulletLoanReinvest : false,
               ),
             )
           : currentState.result,
@@ -1939,6 +1981,33 @@ export default function Home() {
       ...currentState,
       bulletLoanShowReturn: checked,
     }));
+  }
+
+  function handleBulletLoanReinvestToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        bulletLoanReinvest: checked,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                checked,
+              ),
+            )
+          : currentState.result,
+      };
+    });
   }
 
   function handleLenderTenantToggle(checked) {
@@ -1964,6 +2033,7 @@ export default function Home() {
                 checked,
                 nextTenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -1990,6 +2060,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 checked,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -2020,6 +2091,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(nextEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -2047,6 +2119,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(nextEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -2076,6 +2149,7 @@ export default function Home() {
                 currentState.lenderIsTenant,
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(nextEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
               ),
             )
           : currentState.result,
@@ -2312,6 +2386,20 @@ export default function Home() {
               />
               <label htmlFor="bulletLoanShowReturn" className={styles.checkboxLabel}>
                 Netto-Gesamtrückfluss anzeigen (Kapital + Zinsen − Steuer auf Zinsen)
+              </label>
+            </div>
+          )}
+          {bulletLoan && (
+            <div className={styles.checkboxRow}>
+              <input
+                id="bulletLoanReinvest"
+                type="checkbox"
+                checked={bulletLoanReinvest}
+                onChange={(event) => handleBulletLoanReinvestToggle(event.target.checked)}
+                className={styles.checkbox}
+              />
+              <label htmlFor="bulletLoanReinvest" className={styles.checkboxLabel}>
+                Wiederanlage: Nur zurückgezahltes Darlehen + Netto-Zinsen (nach Steuer) neu in die Stiftung anlegen – ETFs bleiben investiert
               </label>
             </div>
           )}

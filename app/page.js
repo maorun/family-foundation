@@ -616,6 +616,8 @@ function calculateProjection(input) {
   let compareEtfContributions = 0;
   let compareEtfTaxedGains = 0;
   let privateRemainingDepreciableBuilding = privateDepreciableBuildingBase;
+  // Tracks the total depreciable base for the private comparison including AfA-qualifying maintenance
+  let privateEffectiveDepreciableBase = privateDepreciableBuildingBase;
 
   // Vergleichsszenario: Gleiches Vermögen komplett in ETF (keine Immobilie)
   // Startet mit demselben Stiftungskapital, kein Darlehen, keine Immobilie, nur ETF
@@ -686,6 +688,12 @@ function calculateProjection(input) {
       guvMaintenanceEtfSaleGross: 0,
       guvMaintenanceEtfSaleTax: 0,
       guvMaintenanceEtfSaleNet: 0,
+      compareMaintenanceCashOut: 0,
+      compareMaintenanceFullDeduction: 0,
+      compareMaintenanceAfaAddition: 0,
+      compareMaintenanceEtfSaleGross: 0,
+      compareMaintenanceEtfSaleTax: 0,
+      compareMaintenanceEtfSaleNet: 0,
     },
   ];
 
@@ -885,12 +893,53 @@ function calculateProjection(input) {
       taxLossCarryforward += Math.abs(taxableResult);
     }
 
+    // Vergleichsszenario: Privatvermietung – Instandhaltungsereignisse
+    let privateMaintCashOut = 0;
+    let privateMaintFullDeduction = 0;
+    let privateMaintAfaAddition = 0;
+    let privateMaintEtfSaleGross = 0;
+    let privateMaintEtfSaleTax = 0;
+    let privateMaintEtfSaleNet = 0;
+
+    for (const evt of (input.maintenanceEvents ?? []).filter((e) => e.year === year)) {
+      privateMaintCashOut += evt.amount;
+      if (evt.type === "full") {
+        privateMaintFullDeduction += evt.amount;
+      } else {
+        privateMaintAfaAddition += evt.amount;
+        privateEffectiveDepreciableBase += evt.amount;
+        privateRemainingDepreciableBuilding += evt.amount;
+      }
+    }
+
+    // Fund private maintenance from compare ETF if cash is insufficient
+    if (privateMaintCashOut > 0 && privateMaintCashOut > privateCash && compareEtfBalance > 0) {
+      const privateMaintenanceShortfall = privateMaintCashOut - privateCash;
+      const privateMaintSale = computePartialEtfSale(
+        privateMaintenanceShortfall,
+        compareEtfBalance,
+        compareEtfContributions,
+        compareEtfTaxedGains,
+        input.privateEtfTaxRate,
+        input.privateEtfPartialExemptionRate,
+      );
+      privateMaintEtfSaleGross = privateMaintSale.grossSale;
+      privateMaintEtfSaleTax = privateMaintSale.saleTax;
+      privateMaintEtfSaleNet = privateMaintSale.netProceeds;
+      privateCash += privateMaintSale.netProceeds;
+      compareEtfBalance -= privateMaintSale.grossSale;
+      compareEtfContributions *= 1 - privateMaintSale.fraction;
+      compareEtfTaxedGains *= 1 - privateMaintSale.fraction;
+    }
+
+    privateCash -= privateMaintCashOut;
+
     // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
     const privateDepreciation = Math.min(
       privateRemainingDepreciableBuilding,
-      privateDepreciableBuildingBase * input.depreciationRate,
+      privateEffectiveDepreciableBase * input.depreciationRate,
     );
-    const privateTaxableRentalIncome = annualRent - privateDepreciation;
+    const privateTaxableRentalIncome = annualRent - privateDepreciation - privateMaintFullDeduction;
     const privateIncomeTax = privateTaxableRentalIncome * yearPersonalTaxRate;
     privateCash += annualRent - privateIncomeTax;
     privateRemainingDepreciableBuilding = Math.max(
@@ -1086,6 +1135,12 @@ function calculateProjection(input) {
       compareGrossEtfReturn: compareEtf.grossEtfReturn,
       compareVorabTax: compareEtf.vorabTax,
       compareEtfSaleTax: compareEtf.saleTax,
+      compareMaintenanceCashOut: privateMaintCashOut,
+      compareMaintenanceFullDeduction: privateMaintFullDeduction,
+      compareMaintenanceAfaAddition: privateMaintAfaAddition,
+      compareMaintenanceEtfSaleGross: privateMaintEtfSaleGross,
+      compareMaintenanceEtfSaleTax: privateMaintEtfSaleTax,
+      compareMaintenanceEtfSaleNet: privateMaintEtfSaleNet,
       // Vergleichsvermögen ETF-only (ohne Immobilie, gleiches Startkapital)
       etfOnlyWealth: etfOnlyCash + etfOnlyEtf.etfLiquidationValue,
       etfOnlyEtfBalance,
@@ -2692,6 +2747,18 @@ export default function Home() {
                           <dd>{formatCurrency(row.compareWealth)}</dd>
                           <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
                         </div>
+                        {row.compareMaintenanceCashOut > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Instandhaltung (Privat)</dt>
+                            <dd className={styles.negative}>{formatCurrency(row.compareMaintenanceCashOut)}</dd>
+                            <small className={styles.formula}>
+                              {row.compareMaintenanceFullDeduction > 0 && `${formatCurrency(row.compareMaintenanceFullDeduction)} voll abzugsfähig`}
+                              {row.compareMaintenanceFullDeduction > 0 && row.compareMaintenanceAfaAddition > 0 && "; "}
+                              {row.compareMaintenanceAfaAddition > 0 && `${formatCurrency(row.compareMaintenanceAfaAddition)} AfA-aktiviert`}
+                              {row.compareMaintenanceEtfSaleGross > 0 && `; ETF-Verkauf ${formatCurrency(row.compareMaintenanceEtfSaleGross)} (Steuer ${formatCurrency(row.compareMaintenanceEtfSaleTax)}, Netto ${formatCurrency(row.compareMaintenanceEtfSaleNet)})`}
+                            </small>
+                          </div>
+                        )}
                       </dl>
                     </div>
                     {includeRealEstate && (

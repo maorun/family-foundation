@@ -177,6 +177,10 @@ const ERBERSATZ_CHILD_ALLOWANCE = 400_000; // Freibetrag je Kind, Steuerklasse I
 const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerklasse I (Kinder)
 const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0.8; // 80 % gem. § 20 InvStG für körperschaftsteuerpflichtige Anleger (Aktienfonds)
 const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0.3; // 30 % gem. § 20 InvStG für private Anleger (Aktienfonds)
+// Körperschaftsteuer (§ 23 Abs. 1 KStG) für Familienstiftungen
+const KST_RATE = 0.15;
+const SOLZ_ON_KST = 0.055; // Solidaritätszuschlag auf KSt
+const KST_COMBINED_RATE = KST_RATE * (1 + SOLZ_ON_KST); // 15,825 %
 
 const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },
@@ -596,6 +600,9 @@ function calculateProjection(input) {
   let erbsCurrentInstallment = 0;
   let erbsCurrentCycleAmount = 0;
 
+  // Körperschaftsteuer-Verlustvortrag (§ 10d EStG i.V.m. § 8 KStG)
+  let taxLossCarryforward = 0;
+
   // Kumulierte Zinsen/Steuer der darlehensgebenden Person (für endfälliges Darlehen)
   let personCumulativeGrossInterest = 0;
   let personCumulativeInterestTax = 0;
@@ -672,6 +679,10 @@ function calculateProjection(input) {
       etfSaleNetForPurchase: 0,
       personCumulativeGrossInterest: 0,
       personCumulativeInterestTax: 0,
+      guvKstAmount: 0,
+      guvKstBase: 0,
+      guvKstUsedCarryforward: 0,
+      guvLossCarryforward: 0,
     },
   ];
 
@@ -829,6 +840,20 @@ function calculateProjection(input) {
       taxableResult = -input.annualAdminCost;
       foundationCashFlow = -input.annualAdminCost;
       foundationCash += foundationCashFlow;
+    }
+
+    // Körperschaftsteuer (KSt 15 % + SolZ 5,5 %) mit Verlustvortrag (§ 10d EStG i.V.m. § 8 KStG)
+    let kstUsedCarryforward = 0;
+    let kstBase = 0;
+    let kstAmount = 0;
+    if (taxableResult >= 0) {
+      kstUsedCarryforward = Math.min(taxLossCarryforward, taxableResult);
+      kstBase = taxableResult - kstUsedCarryforward;
+      taxLossCarryforward -= kstUsedCarryforward;
+      kstAmount = kstBase * KST_COMBINED_RATE;
+      foundationCash -= kstAmount;
+    } else {
+      taxLossCarryforward += Math.abs(taxableResult);
     }
 
     // Vergleichsszenario: Privatvermietung – kein Darlehen, keine Verwaltungskosten, Steuern auf Miete
@@ -990,6 +1015,10 @@ function calculateProjection(input) {
       guvMaintenanceCashOut: maintenanceCashOut,
       guvMaintenanceFullDeduction: maintenanceFullDeduction,
       guvMaintenanceAfaAddition: maintenanceAfaAddition,
+      guvKstAmount: kstAmount,
+      guvKstBase: kstBase,
+      guvKstUsedCarryforward: kstUsedCarryforward,
+      guvLossCarryforward: taxLossCarryforward,
       loanAtStartOfYear,
       scheduledRepayment,
       extraRepayment,
@@ -2697,6 +2726,27 @@ export default function Home() {
                             </dd>
                             <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA){row.guvMaintenanceFullDeduction > 0 ? ` − ${formatCurrency(row.guvMaintenanceFullDeduction)} (Instandhaltung Sofortabzug)` : ""}</small>
                           </div>
+                          {row.year > 0 && row.guvKstUsedCarryforward > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Verlustvortrag (verrechnet)</dt>
+                              <dd className={styles.negative}>− {formatCurrency(row.guvKstUsedCarryforward)}</dd>
+                              <small className={styles.formula}>Kumulierter Verlustvortrag aus Vorjahren reduziert das zu versteuernde Einkommen</small>
+                            </div>
+                          )}
+                          {row.year > 0 && row.guvKstAmount > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Körperschaftsteuer + SolZ</dt>
+                              <dd className={styles.negative}>− {formatCurrency(row.guvKstAmount)}</dd>
+                              <small className={styles.formula}>{formatCurrency(row.guvKstBase)} (zu versteuerndes Einkommen) × {formatPercent(KST_COMBINED_RATE * 100)} (KSt {formatPercent(KST_RATE * 100)} + SolZ {formatPercent(SOLZ_ON_KST * 100)})</small>
+                            </div>
+                          )}
+                          {row.year > 0 && row.guvLossCarryforward > 0 && (
+                            <div className={styles.dataItem}>
+                              <dt>Verlustvortrag (kumuliert)</dt>
+                              <dd>{formatCurrency(row.guvLossCarryforward)}</dd>
+                              <small className={styles.formula}>Noch nicht verrechnete steuerliche Verluste aus Vorjahren</small>
+                            </div>
+                          )}
                         </dl>
                       </div>
                       <div className={styles.guvColumn}>

@@ -1011,6 +1011,27 @@ function calculateProjection(input) {
     foundationEtfContributions = foundationEtf.etfContributionsAfterInvestment;
     foundationEtfTaxedGains = foundationEtf.etfTaxedGainsAfterYear;
 
+    // Wiederanlage des endfälligen Darlehens: Am Ende jeder Laufzeit wird nur das
+    // zurückgegebene Darlehen plus die Netto-Zinsen (nach Steuer) wieder als neues
+    // Darlehen in die Stiftung angelegt. Die ETFs des Darlehensgebers werden nicht
+    // verkauft – der in personCash liegende Betrag (zurückgezahltes Kapital +
+    // diesjähriger Netto-Zins) ist genau der Wiederanlagebetrag.
+    if (
+      input.bulletLoan &&
+      input.bulletLoanReinvest &&
+      year % input.loanTermYears === 0 &&
+      year > 0
+    ) {
+      const reinvestmentAmount = personCash;
+      foundationCash += reinvestmentAmount;
+      remainingLoan = reinvestmentAmount;
+      personCash = 0;
+
+      // Kumulative Zinstracker für den nächsten Zyklus zurücksetzen
+      personCumulativeGrossInterest = 0;
+      personCumulativeInterestTax = 0;
+    }
+
     const interestAllowanceUsed = Math.min(annualInterest, input.saverAllowance);
     const personEtfSaverAllowance = input.saverAllowance - interestAllowanceUsed;
     const personEtf = applyEtfYear({
@@ -1027,38 +1048,6 @@ function calculateProjection(input) {
     personEtfBalance = personEtf.etfBalanceAfterTax;
     personEtfContributions = personEtf.etfContributionsAfterInvestment;
     personEtfTaxedGains = personEtf.etfTaxedGainsAfterYear;
-
-    // Wiederanlage des endfälligen Darlehens: Am Ende jeder Laufzeit liquidiert der
-    // Darlehensgeber sein gesamtes ETF-Vermögen und legt Darlehen + Zinsen − Steuer
-    // wieder als neues Darlehen in die Stiftung an.
-    if (
-      input.bulletLoan &&
-      input.bulletLoanReinvest &&
-      year % input.loanTermYears === 0 &&
-      year > 0
-    ) {
-      const { etfLiquidationValue: personEtfLiqValue } = computeEtfSaleTaxData(
-        personEtfBalance,
-        personEtfContributions,
-        personEtfTaxedGains,
-        input.privateEtfTaxRate,
-        input.privateEtfPartialExemptionRate,
-      );
-      personCash += personEtfLiqValue;
-      personEtfBalance = 0;
-      personEtfContributions = 0;
-      personEtfTaxedGains = 0;
-
-      // Neues Darlehen = gesamtes verfügbares Personenvermögen (Darlehen + Netto-Zinsen + ETF-Rendite)
-      const reinvestmentAmount = personCash;
-      foundationCash += reinvestmentAmount;
-      remainingLoan = reinvestmentAmount;
-      personCash = 0;
-
-      // Kumulative Zinstracker für den nächsten Zyklus zurücksetzen
-      personCumulativeGrossInterest = 0;
-      personCumulativeInterestTax = 0;
-    }
 
     const compareEtf = applyEtfYear({
       cash: privateCash,
@@ -2413,7 +2402,7 @@ export default function Home() {
                 className={styles.checkbox}
               />
               <label htmlFor="bulletLoanReinvest" className={styles.checkboxLabel}>
-                Wiederanlage: Darlehen + Zinsen − Steuer nach Laufzeitende neu in die Stiftung anlegen
+                Wiederanlage: Nur zurückgezahltes Darlehen + Netto-Zinsen (nach Steuer) neu in die Stiftung anlegen – ETFs bleiben investiert
               </label>
             </div>
           )}

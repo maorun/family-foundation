@@ -855,7 +855,7 @@ export function calculateProjection(input) {
 
   for (let year = 1; year <= input.projectionYears; year += 1) {
     const yearPersonalTaxRate = getPersonalTaxRateForYear(input.personalTaxSteps, year);
-    const inflationFactor = Math.pow(1 + (input.inflationRate ?? 0), year - 1);
+    const inflationFactor = Math.pow(1 + input.inflationRate, year - 1);
     const yearlyRent = annualRent * inflationFactor;
     const yearlyAdminCost = input.annualAdminCost * inflationFactor;
 

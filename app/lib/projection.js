@@ -685,6 +685,15 @@ export function calculateProjection(input) {
   let etfOnlyEtfContributions = 0;
   let etfOnlyEtfTaxedGains = 0;
 
+  // Vergleichsszenario: Selbstnutzung – Person kauft Immobilie selbst und nutzt sie
+  // Kein Darlehen an Stiftung, keine AfA (da Eigennutzung), keine Mieteinnahmen.
+  // Jährlicher Vorteil: gesparte Miete (= annualRent) als impliziter steuerfreier Cashflow.
+  let selfUseCash =
+    input.initialCapital + input.loanAmount - propertyValue - privateRealEstateTax;
+  let selfUseEtfBalance = 0;
+  let selfUseEtfContributions = 0;
+  let selfUseEtfTaxedGains = 0;
+
   const buildingBookValue0 = deferredPurchase ? 0 : depreciableBuildingBase + landBookBase;
 
   const rows = [
@@ -733,6 +742,12 @@ export function calculateProjection(input) {
       etfOnlyEtfLiquidationValue: 0,
       etfOnlyVorabTax: 0,
       etfOnlyEtfSaleTax: 0,
+      // Vergleichsvermögen Selbstnutzung Jahr 0
+      selfUseWealth: selfUseCash + propertyValue,
+      selfUseEtfBalance,
+      selfUseEtfLiquidationValue: 0,
+      selfUseVorabTax: 0,
+      selfUseEtfSaleTax: 0,
       propertyOwned: !deferredPurchase,
       propertyBoughtThisYear: false,
       etfSaleForPurchase: 0,
@@ -1133,6 +1148,23 @@ export function calculateProjection(input) {
     etfOnlyEtfContributions = etfOnlyEtf.etfContributionsAfterInvestment;
     etfOnlyEtfTaxedGains = etfOnlyEtf.etfTaxedGainsAfterYear;
 
+    // Selbstnutzung: gesparte Miete fließt als impliziter steuerfreier Cashflow zu
+    selfUseCash += annualRent;
+    const selfUseEtf = applyEtfYear({
+      cash: selfUseCash,
+      etfBalance: selfUseEtfBalance,
+      etfContributions: selfUseEtfContributions,
+      etfTaxedGains: selfUseEtfTaxedGains,
+      returnRate: input.etfReturnRate,
+      taxRate: input.privateEtfTaxRate,
+      partialExemptionRate: input.privateEtfPartialExemptionRate,
+      saverAllowance: input.saverAllowance,
+    });
+    selfUseCash = selfUseEtf.cashAfterInvestment;
+    selfUseEtfBalance = selfUseEtf.etfBalanceAfterTax;
+    selfUseEtfContributions = selfUseEtf.etfContributionsAfterInvestment;
+    selfUseEtfTaxedGains = selfUseEtf.etfTaxedGainsAfterYear;
+
     rows.push({
       year,
       foundationCash,
@@ -1228,6 +1260,12 @@ export function calculateProjection(input) {
       etfOnlyEtfLiquidationValue: etfOnlyEtf.etfLiquidationValue,
       etfOnlyVorabTax: etfOnlyEtf.vorabTax,
       etfOnlyEtfSaleTax: etfOnlyEtf.saleTax,
+      // Vergleichsvermögen Selbstnutzung (Eigennutzung ohne AfA, gesparte Miete)
+      selfUseWealth: selfUseCash + selfUseEtf.etfLiquidationValue + propertyValue,
+      selfUseEtfBalance,
+      selfUseEtfLiquidationValue: selfUseEtf.etfLiquidationValue,
+      selfUseVorabTax: selfUseEtf.vorabTax,
+      selfUseEtfSaleTax: selfUseEtf.saleTax,
       // Deferred-purchase fields
       propertyOwned: foundationOwnsProperty,
       propertyBoughtThisYear,

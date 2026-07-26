@@ -72,6 +72,7 @@ function normalizeConfig(rawConfig = {}) {
     personalTaxSteps,
     selectedOverviewYear: rawConfig.selectedOverviewYear ?? "all",
     includeRealEstate: rawConfig.includeRealEstate ?? false,
+    compareType: rawConfig.compareType ?? "rental",
     bulletLoan: rawConfig.bulletLoan ?? false,
     bulletLoanShowReturn: rawConfig.bulletLoanShowReturn ?? false,
     bulletLoanReinvest: rawConfig.bulletLoanReinvest ?? false,
@@ -117,6 +118,7 @@ function toScenarioConfig(state) {
     personalTaxSteps: state.personalTaxSteps,
     selectedOverviewYear: state.selectedOverviewYear,
     includeRealEstate: state.includeRealEstate,
+    compareType: state.compareType,
     bulletLoan: state.bulletLoan,
     bulletLoanShowReturn: state.bulletLoanShowReturn,
     bulletLoanReinvest: state.bulletLoanReinvest,
@@ -143,6 +145,13 @@ function ServiceWorkerRegistration() {
   return null;
 }
 
+function getActiveCompareWealth(row, compareType, includeRealEstate) {
+  if (!includeRealEstate) return row.compareWealth;
+  if (compareType === "etfOnly") return row.etfOnlyWealth;
+  if (compareType === "selfUse") return row.selfUseWealth;
+  return row.compareWealth; // 'rental' (default)
+}
+
 export default function Home() {
   const [
     {
@@ -154,6 +163,7 @@ export default function Home() {
       personalTaxSteps,
       selectedOverviewYear,
       includeRealEstate,
+      compareType,
       bulletLoan,
       bulletLoanShowReturn,
       bulletLoanReinvest,
@@ -175,6 +185,7 @@ export default function Home() {
     personalTaxSteps: DEFAULT_PERSONAL_TAX_STEPS,
     selectedOverviewYear: "all",
     includeRealEstate: false,
+    compareType: "rental",
     bulletLoan: false,
     bulletLoanShowReturn: false,
     bulletLoanReinvest: false,
@@ -254,6 +265,7 @@ export default function Home() {
               personalTaxSteps,
               selectedOverviewYear,
               includeRealEstate,
+              compareType,
               bulletLoan,
               bulletLoanShowReturn,
               bulletLoanReinvest,
@@ -278,6 +290,7 @@ export default function Home() {
     personalTaxSteps,
     selectedOverviewYear,
     includeRealEstate,
+    compareType,
     bulletLoan,
     bulletLoanShowReturn,
     bulletLoanReinvest,
@@ -307,12 +320,6 @@ export default function Home() {
     () => getRelationshipOption(relationshipId),
     [relationshipId],
   );
-  const compareTaxCardDetail = result.input.comparePaysRealEstateTax
-    ? ", inkl. Grunderwerbsteuer"
-    : ", ohne Grunderwerbsteuer";
-  const compareTaxFormulaDetail = result.input.comparePaysRealEstateTax
-    ? `, mit ${formatCurrency(result.privateRealEstateTax)} GrESt`
-    : ", ohne GrESt";
   const overviewYearOptions = useMemo(
     () => result.rows.map((row) => row.year),
     [result.rows],
@@ -331,7 +338,20 @@ export default function Home() {
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
 
-  const compareScenarioLabel = includeRealEstate ? "Privatvermietung" : "Privates ETF-Investment";
+  const compareScenarioLabel = !includeRealEstate
+    ? "Privates ETF-Investment"
+    : compareType === "etfOnly"
+      ? "Gleiches Kapital, nur ETF"
+      : compareType === "selfUse"
+        ? "Selbstnutzung"
+        : "Privatvermietung";
+
+  const compareTaxCardDetail = result.input.comparePaysRealEstateTax
+    ? ", inkl. Grunderwerbsteuer"
+    : ", ohne Grunderwerbsteuer";
+  const compareTaxFormulaDetail = result.input.comparePaysRealEstateTax
+    ? `, mit ${formatCurrency(result.privateRealEstateTax)} GrESt`
+    : ", ohne GrESt";
 
   const cards = [
     {
@@ -435,16 +455,15 @@ export default function Home() {
     },
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (${compareScenarioLabel})`,
-      value: formatCurrency(lastYear.compareWealth),
-      detail: includeRealEstate
-        ? `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
-        : `Ohne Stiftung, Kapital direkt in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`,
+      value: formatCurrency(getActiveCompareWealth(lastYear, compareType, includeRealEstate)),
+      detail: !includeRealEstate
+        ? `Ohne Stiftung, Kapital direkt in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`
+        : compareType === "etfOnly"
+          ? `Gleiches Startkapital (${formatCurrency(result.input.initialCapital)}) ohne Immobilie, vollständig in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`
+          : compareType === "selfUse"
+            ? `Eigennutzung ohne AfA, gesparte Miete (${formatCurrency(result.annualRent)} p.a.) steuerlich nicht relevant${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
+            : `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
     },
-    ...(includeRealEstate ? [{
-      title: `ETF-Vergleichsvermögen Jahr ${result.input.projectionYears} (gleiches Kapital, nur ETF)`,
-      value: formatCurrency(lastYear.etfOnlyWealth),
-      detail: `Gleiches Startkapital (${formatCurrency(result.input.initialCapital)}) ohne Immobilie, vollständig in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`,
-    }] : []),
   ].filter((card) => (!card.realEstateOnly || includeRealEstate) && (!card.loanOnly || result.input.loanAmount > 0));
 
   const wealthChart = useMemo(() => {
@@ -516,18 +535,8 @@ export default function Home() {
         color: "#ea580c",
         values: result.rows.map((row) => ({
           year: row.year,
-          value: row.compareWealth,
+          value: getActiveCompareWealth(row, compareType, includeRealEstate),
         })),
-      },
-      {
-        id: "etfOnly",
-        label: "Gleiches Kapital, nur ETF (ohne Immobilie)",
-        color: "#16a34a",
-        values: result.rows.map((row) => ({
-          year: row.year,
-          value: row.etfOnlyWealth,
-        })),
-        realEstateOnly: true,
       },
     ];
     const series = allSeries.filter((s) => (!s.realEstateOnly || includeRealEstate) && (!s.loanOnly || result.input.loanAmount > 0));
@@ -574,7 +583,7 @@ export default function Home() {
       );
 
     const breakEvenIndex = result.rows.findIndex(
-      (row, index) => index >= 1 && row.foundationWealth + row.personAssetPosition >= row.compareWealth,
+      (row, index) => index >= 1 && row.foundationWealth + row.personAssetPosition >= getActiveCompareWealth(row, compareType, includeRealEstate),
     );
     const breakEven =
       breakEvenIndex >= 0
@@ -594,7 +603,7 @@ export default function Home() {
       xTicks,
       breakEven,
     };
-  }, [result.rows, result.input.loanAmount, includeRealEstate, compareScenarioLabel]);
+  }, [result.rows, result.input.loanAmount, includeRealEstate, compareType, compareScenarioLabel]);
 
   function handleFieldChange(fieldId, value) {
     setState((currentState) => {
@@ -735,6 +744,13 @@ export default function Home() {
           : currentState.result,
       };
     });
+  }
+
+  function handleCompareTypeChange(type) {
+    setState((currentState) => ({
+      ...currentState,
+      compareType: type,
+    }));
   }
 
   function handleBundeslandChange(name) {
@@ -1165,7 +1181,7 @@ export default function Home() {
   const wealthDiff =
     lastYear.foundationWealth +
     (result.input.loanAmount > 0 ? lastYear.personAssetPosition : 0) -
-    lastYear.compareWealth;
+    getActiveCompareWealth(lastYear, compareType, includeRealEstate);
 
   return (
     <>
@@ -1499,18 +1515,61 @@ export default function Home() {
             </div>
           )}
           {includeRealEstate && (
-            <div className={styles.checkboxRow}>
-              <input
-                id="comparePaysRealEstateTax"
-                type="checkbox"
-                checked={comparePaysRealEstateTax}
-                onChange={(event) => handleCompareRealEstateTaxToggle(event.target.checked)}
-                className={styles.checkbox}
-              />
-              <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
-                Vergleichsvermögen zahlt Grunderwerbsteuer
-              </label>
-            </div>
+            <fieldset className={styles.radioFieldset}>
+              <legend className={styles.fieldLabel}>Vergleichsparameter</legend>
+              <p className={styles.hint}>
+                Wählen Sie, womit die Stiftung verglichen werden soll.
+              </p>
+              <div className={styles.radioGroup}>
+                <label className={styles.radioOption}>
+                  <input
+                    type="radio"
+                    name="compareType"
+                    value="rental"
+                    checked={compareType === "rental"}
+                    onChange={() => handleCompareTypeChange("rental")}
+                    className={styles.radio}
+                  />
+                  <span>Privatvermietung (mit AfA, Mieteinnahmen versteuert)</span>
+                </label>
+                <label className={styles.radioOption}>
+                  <input
+                    type="radio"
+                    name="compareType"
+                    value="etfOnly"
+                    checked={compareType === "etfOnly"}
+                    onChange={() => handleCompareTypeChange("etfOnly")}
+                    className={styles.radio}
+                  />
+                  <span>Gleiches Kapital, nur ETF (keine Immobilie)</span>
+                </label>
+                <label className={styles.radioOption}>
+                  <input
+                    type="radio"
+                    name="compareType"
+                    value="selfUse"
+                    checked={compareType === "selfUse"}
+                    onChange={() => handleCompareTypeChange("selfUse")}
+                    className={styles.radio}
+                  />
+                  <span>Selbstnutzung (keine AfA, keine Mieteinnahmen; gesparte Miete als steuerfreier Vorteil)</span>
+                </label>
+              </div>
+              {compareType !== "etfOnly" && (
+                <div className={styles.checkboxRow}>
+                  <input
+                    id="comparePaysRealEstateTax"
+                    type="checkbox"
+                    checked={comparePaysRealEstateTax}
+                    onChange={(event) => handleCompareRealEstateTaxToggle(event.target.checked)}
+                    className={styles.checkbox}
+                  />
+                  <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
+                    Vergleichsvermögen zahlt Grunderwerbsteuer
+                  </label>
+                </div>
+              )}
+            </fieldset>
           )}
           {includeRealEstate && (
             <div className={styles.taxStepsSection}>
@@ -1909,14 +1968,22 @@ export default function Home() {
                       </dl>
                     </div>
                     <div className={styles.guvColumn}>
-                      <h5 className={styles.guvColumnTitle}>Privat ohne Stiftung (Vergleich)</h5>
+                      <h5 className={styles.guvColumnTitle}>Privat ohne Stiftung ({compareScenarioLabel})</h5>
                       <dl className={styles.dataGrid}>
                         <div className={styles.dataItem}>
                           <dt>Vergleichsvermögen</dt>
-                          <dd>{formatCurrency(row.compareWealth)}</dd>
-                          <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
+                          <dd>{formatCurrency(getActiveCompareWealth(row, compareType, includeRealEstate))}</dd>
+                          {compareType === "etfOnly" && (
+                            <small className={styles.formula}>ETF (nach Verkaufsteuer) — gleiches Startkapital ({formatCurrency(result.input.initialCapital)}), keine Immobilie, kein Darlehen, kein Verwaltungsaufwand</small>
+                          )}
+                          {compareType === "selfUse" && (
+                            <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — Eigennutzung, keine AfA, gesparte Miete {formatCurrency(result.annualRent)} p.a.{compareTaxFormulaDetail}</small>
+                          )}
+                          {(compareType === "rental" || !includeRealEstate) && (
+                            <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
+                          )}
                         </div>
-                        {row.compareMaintenanceCashOut > 0 && (
+                        {compareType === "rental" && row.compareMaintenanceCashOut > 0 && (
                           <div className={styles.dataItem}>
                             <dt>Instandhaltung (Privat)</dt>
                             <dd className={styles.negative}>{formatCurrency(row.compareMaintenanceCashOut)}</dd>
@@ -1930,18 +1997,6 @@ export default function Home() {
                         )}
                       </dl>
                     </div>
-                    {includeRealEstate && (
-                      <div className={styles.guvColumn}>
-                        <h5 className={styles.guvColumnTitle}>Gleiches Kapital, nur ETF (Vergleich)</h5>
-                        <dl className={styles.dataGrid}>
-                          <div className={styles.dataItem}>
-                            <dt>Vergleichsvermögen (ETF-only)</dt>
-                            <dd>{formatCurrency(row.etfOnlyWealth)}</dd>
-                            <small className={styles.formula}>ETF (nach Verkaufsteuer) — gleiches Startkapital ({formatCurrency(result.input.initialCapital)}), keine Immobilie, kein Darlehen, kein Verwaltungsaufwand</small>
-                          </div>
-                        </dl>
-                      </div>
-                    )}
                   </div>
                 </div>
 

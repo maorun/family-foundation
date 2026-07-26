@@ -198,3 +198,75 @@ describe("calculateProjection", () => {
     expect(withCostResult.rows[0].taxableResult).toBeCloseTo(baseResult.rows[0].taxableResult - 12000, 2);
   });
 });
+
+describe("selfUse KfW loan", () => {
+  function buildInput(overrides = {}) {
+    const values = { ...DEFAULT_FORM_VALUES, ...overrides };
+    const validation = validateFormValues(getEffectiveFormValues(values, true), false);
+    const taxValidation = validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS);
+    if (!validation.input || !taxValidation.parsedSteps) {
+      throw new Error("inputs must be valid");
+    }
+    return createProjectionInput(
+      validation.input,
+      getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+      false,
+      taxValidation.parsedSteps,
+      false,
+    );
+  }
+
+  it("without KfW loan, selfUseRemainingKfwLoan is 0 at year 0", () => {
+    const input = buildInput({ selfUseKfwLoanAmount: "0" });
+    const result = calculateProjection(input);
+    const row0 = result.rows[0];
+    expect(row0.selfUseRemainingKfwLoan).toBe(0);
+    expect(row0.selfUseKfwInterest).toBe(0);
+    expect(row0.selfUseKfwRepayment).toBe(0);
+  });
+
+  it("KfW loan boosts initial cash but keeps selfUseWealth neutral at year 0", () => {
+    const withoutKfw = buildInput({ selfUseKfwLoanAmount: "0" });
+    const withKfw = buildInput({ selfUseKfwLoanAmount: "100000", selfUseKfwLoanInterestRate: "0.01", selfUseKfwLoanTermYears: "10" });
+
+    const withoutResult = calculateProjection(withoutKfw);
+    const withResult = calculateProjection(withKfw);
+
+    // Wealth at year 0 should be the same (loan increases cash but is a liability)
+    expect(withResult.rows[0].selfUseWealth).toBeCloseTo(withoutResult.rows[0].selfUseWealth, 2);
+    expect(withResult.rows[0].selfUseRemainingKfwLoan).toBe(100000);
+  });
+
+  it("KfW loan is repaid evenly over the term", () => {
+    const input = buildInput({ selfUseKfwLoanAmount: "100000", selfUseKfwLoanInterestRate: "0.01", selfUseKfwLoanTermYears: "10" });
+    const result = calculateProjection(input);
+
+    // Each year should repay 10,000 (100,000 / 10 years)
+    expect(result.rows[1].selfUseKfwRepayment).toBeCloseTo(10000, 2);
+    expect(result.rows[1].selfUseRemainingKfwLoan).toBeCloseTo(90000, 2);
+
+    // After term, loan should be fully repaid
+    expect(result.rows[10].selfUseRemainingKfwLoan).toBeCloseTo(0, 2);
+  });
+
+  it("KfW annual interest is charged on the remaining balance", () => {
+    // Interest rate "1" is a form value string representing 1 % p.a. (divided by 100 in validateFormValues)
+    const input = buildInput({ selfUseKfwLoanAmount: "100000", selfUseKfwLoanInterestRate: "1", selfUseKfwLoanTermYears: "10" });
+    const result = calculateProjection(input);
+
+    // Year 1: interest = 100,000 * 1% = 1,000
+    expect(result.rows[1].selfUseKfwInterest).toBeCloseTo(1000, 2);
+    // Year 2: remaining = 90,000; interest = 90,000 * 1% = 900
+    expect(result.rows[2].selfUseKfwInterest).toBeCloseTo(900, 2);
+  });
+
+  it("after KfW loan is repaid, no more KfW payments occur", () => {
+    const input = buildInput({ selfUseKfwLoanAmount: "100000", selfUseKfwLoanInterestRate: "0.01", selfUseKfwLoanTermYears: "10", projectionYears: "15" });
+    const result = calculateProjection(input);
+
+    // Year 11 onwards: no KfW payments
+    expect(result.rows[11].selfUseKfwRepayment).toBe(0);
+    expect(result.rows[11].selfUseKfwInterest).toBe(0);
+    expect(result.rows[11].selfUseRemainingKfwLoan).toBe(0);
+  });
+});

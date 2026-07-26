@@ -1430,6 +1430,7 @@ export default function Home() {
             const nonRealEstateFields = FIELD_DEFINITIONS.filter(
               (f) =>
                 !f.realEstate &&
+                !f.selfUse &&
                 !(f.id === "loanRepaymentRate" && bulletLoan) &&
                 !(f.conditionalField === "bulletLoan" && !bulletLoan),
             );
@@ -1746,6 +1747,43 @@ export default function Home() {
                 </div>
               )}
             </fieldset>
+          )}
+          {includeRealEstate && compareType === "selfUse" && (
+            <div className={styles.inputSection}>
+              <h3 className={styles.inputSectionTitle}>KfW-Förderkredit (Selbstnutzung)</h3>
+              <p className={styles.hint}>
+                Bei Selbstnutzung kann ein KfW-Förderkredit zu sehr günstigen Konditionen aufgenommen werden.
+                Der Kreditbetrag verbleibt als Investitionskapital in ETFs; jährliche Tilgung und Zinsen
+                werden als Abfluss berücksichtigt. Bei Betrag 0 hat der KfW-Kredit keinen Einfluss.
+              </p>
+              <div className={styles.grid}>
+                {FIELD_DEFINITIONS.filter((f) => f.selfUse).map((field) => {
+                  const isInvalid = validation.invalidIds.includes(field.id);
+                  return (
+                    <div key={field.id}>
+                      <label
+                        htmlFor={field.id}
+                        className={styles.fieldLabel}
+                      >
+                        {field.label}
+                      </label>
+                      <input
+                        id={field.id}
+                        type="number"
+                        min={field.min}
+                        max={field.max}
+                        step={field.step}
+                        value={formValues[field.id]}
+                        onChange={(event) => handleFieldChange(field.id, event.target.value)}
+                        className={`${styles.fieldInput} ${isInvalid ? styles.fieldInputInvalid : ""}`.trim()}
+                        aria-invalid={isInvalid}
+                        required
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
           {includeRealEstate && (
             <div className={styles.taxStepsSection}>
@@ -2185,7 +2223,7 @@ export default function Home() {
                             <small className={styles.formula}>ETF (nach Verkaufsteuer) — gleiches Startkapital ({formatCurrency(result.input.initialCapital)}), keine Immobilie, kein Darlehen, kein Verwaltungsaufwand</small>
                           )}
                           {compareType === "selfUse" && (
-                            <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — Eigennutzung, keine AfA, kein Mietvorteil{compareTaxFormulaDetail}</small>
+                            <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert){result.input.selfUseKfwLoanAmount > 0 ? ` − KfW-Restschuld` : ""} — Eigennutzung, keine AfA, kein Mietvorteil{compareTaxFormulaDetail}</small>
                           )}
                           {(compareType === "rental" || !includeRealEstate) && (
                             <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
@@ -2210,6 +2248,15 @@ export default function Home() {
                             <small className={styles.formula}>
                               Kein Steuerabzug (Eigennutzung)
                               {row.selfUseMaintEtfSaleGross > 0 && `; ETF-Verkauf ${formatCurrency(row.selfUseMaintEtfSaleGross)} (Steuer ${formatCurrency(row.selfUseMaintEtfSaleTax)}, Netto ${formatCurrency(row.selfUseMaintEtfSaleNet)})`}
+                            </small>
+                          </div>
+                        )}
+                        {compareType === "selfUse" && row.year > 0 && (row.selfUseKfwRepayment > 0 || row.selfUseKfwInterest > 0) && (
+                          <div className={styles.dataItem}>
+                            <dt>KfW-Kredit (Tilgung + Zinsen)</dt>
+                            <dd className={styles.negative}>{formatCurrency(row.selfUseKfwRepayment + row.selfUseKfwInterest)}</dd>
+                            <small className={styles.formula}>
+                              Tilgung: {formatCurrency(row.selfUseKfwRepayment)}, Zinsen: {formatCurrency(row.selfUseKfwInterest)} ({formatPercent(result.input.selfUseKfwLoanInterestRate * 100)} auf {formatCurrency(row.selfUseRemainingKfwLoan + row.selfUseKfwRepayment)} Restschuld)
                             </small>
                           </div>
                         )}

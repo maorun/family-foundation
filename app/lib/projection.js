@@ -172,9 +172,9 @@ export const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerkla
 const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0.8; // 80 % gem. § 20 InvStG für körperschaftsteuerpflichtige Anleger (Aktienfonds)
 const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0.3; // 30 % gem. § 20 InvStG für private Anleger (Aktienfonds)
 // Körperschaftsteuer (§ 23 Abs. 1 KStG) für Familienstiftungen
-const KST_RATE = 0.15;
-const SOLZ_ON_KST = 0.055; // Solidaritätszuschlag auf KSt
-const KST_COMBINED_RATE = KST_RATE * (1 + SOLZ_ON_KST); // 15,825 %
+export const KST_RATE = 0.15;
+export const SOLZ_ON_KST = 0.055; // Solidaritätszuschlag auf KSt
+export const KST_COMBINED_RATE = KST_RATE * (1 + SOLZ_ON_KST); // 15,825 %
 
 export const BUNDESLAENDER = [
   { name: "Baden-Württemberg", rate: 5.0 },

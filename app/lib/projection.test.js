@@ -198,3 +198,83 @@ describe("calculateProjection", () => {
     expect(withCostResult.rows[0].taxableResult).toBeCloseTo(baseResult.rows[0].taxableResult - 12000, 2);
   });
 });
+
+describe("calculateProjection – Destinatärszahlungen", () => {
+  function makeInput(overrides = {}) {
+    const formValues = { ...DEFAULT_FORM_VALUES, ...overrides };
+    const validation = validateFormValues(
+      getEffectiveFormValues(formValues, false, true),
+      false,
+    );
+    const taxValidation = validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS);
+    if (!validation.input || !taxValidation.parsedSteps) {
+      throw new Error("inputs must be valid");
+    }
+    return createProjectionInput(
+      validation.input,
+      getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+      false,
+      taxValidation.parsedSteps,
+      false,
+    );
+  }
+
+  it("zero distribution (default) results in no distribution fields", () => {
+    const input = makeInput({ annualDistribution: "0" });
+    const result = calculateProjection(input);
+    for (const row of result.rows.slice(1)) {
+      expect(row.distributionGross).toBe(0);
+      expect(row.distributionTax).toBe(0);
+      expect(row.distributionNet).toBe(0);
+    }
+  });
+
+  it("gross/net distribution computed correctly with saver allowance", () => {
+    // 2 Destinatäre, je 6.000 € Brutto → gesamt 12.000 €
+    // Sparerpauschbetrag 1.000 € je Person → steuerpflichtiger Anteil je 5.000 €
+    // Steuer: 5.000 × 26,375 % = 1.318,75 € × 2 = 2.637,50 €
+    // Netto: 12.000 − 2.637,50 = 9.362,50 €
+    const input = makeInput({
+      annualDistribution: "12000",
+      destinatarCount: "2",
+      destinatarTaxRate: "26.375",
+      destinatarSaverAllowance: "1000",
+    });
+    const result = calculateProjection(input);
+    const row1 = result.rows[1];
+    expect(row1.distributionGross).toBeCloseTo(12_000, 2);
+    expect(row1.distributionTax).toBeCloseTo(2_637.5, 2);
+    expect(row1.distributionNet).toBeCloseTo(9_362.5, 2);
+  });
+
+  it("gross/net distribution without saver allowance (allowance = 0)", () => {
+    // 1 Destinatär, 10.000 € Brutto, kein Freibetrag, 26,375 % Steuer
+    // Netto: 10.000 × (1 − 0,26375) = 7.362,50 €
+    const input = makeInput({
+      annualDistribution: "10000",
+      destinatarCount: "1",
+      destinatarTaxRate: "26.375",
+      destinatarSaverAllowance: "0",
+    });
+    const result = calculateProjection(input);
+    const row1 = result.rows[1];
+    expect(row1.distributionGross).toBeCloseTo(10_000, 2);
+    expect(row1.distributionTax).toBeCloseTo(2_637.5, 2);
+    expect(row1.distributionNet).toBeCloseTo(7_362.5, 2);
+  });
+
+  it("foundation wealth decreases by gross distribution each year", () => {
+    const baseInput = makeInput({ annualDistribution: "0" });
+    const distInput = makeInput({
+      annualDistribution: "5000",
+      destinatarCount: "1",
+      destinatarTaxRate: "0",
+      destinatarSaverAllowance: "0",
+    });
+    const baseResult = calculateProjection(baseInput);
+    const distResult = calculateProjection(distInput);
+    const lastBase = baseResult.rows[baseResult.rows.length - 1];
+    const lastDist = distResult.rows[distResult.rows.length - 1];
+    expect(lastDist.foundationWealth).toBeLessThan(lastBase.foundationWealth);
+  });
+});

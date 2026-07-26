@@ -138,6 +138,41 @@ export const FIELD_DEFINITIONS = [
     integer: true,
     defaultValue: 10,
   },
+  {
+    id: "annualDistribution",
+    label: "Jährliche Ausschüttung an Destinatäre (€)",
+    min: 0,
+    step: "100",
+    defaultValue: 0,
+    distribution: true,
+  },
+  {
+    id: "destinatarCount",
+    label: "Anzahl Destinatäre",
+    min: 1,
+    max: 100,
+    step: "1",
+    integer: true,
+    defaultValue: 1,
+    distribution: true,
+  },
+  {
+    id: "destinatarTaxRate",
+    label: "Steuersatz auf Ausschüttungen (§ 20 Abs. 1 Nr. 9 EStG) (%)",
+    min: 0,
+    max: 100,
+    step: "0.001",
+    defaultValue: 26.375,
+    distribution: true,
+  },
+  {
+    id: "destinatarSaverAllowance",
+    label: "Sparerpauschbetrag je Destinatär (€/Jahr)",
+    min: 0,
+    step: "100",
+    defaultValue: 1000,
+    distribution: true,
+  },
 ];
 
 // § 19 Abs. 1 ErbStG – Stufentarif für Schenkung- und Erbschaftsteuer
@@ -298,10 +333,23 @@ const REAL_ESTATE_FIELD_IDS = new Set(
   FIELD_DEFINITIONS.filter((f) => f.realEstate).map((f) => f.id),
 );
 
-export function getEffectiveFormValues(formValues, includeRealEstate) {
-  if (includeRealEstate) return formValues;
-  const zeros = Object.fromEntries([...REAL_ESTATE_FIELD_IDS].map((id) => [id, "0"]));
-  return { ...formValues, ...zeros };
+const DISTRIBUTION_FIELD_IDS = new Set(
+  FIELD_DEFINITIONS.filter((f) => f.distribution).map((f) => f.id),
+);
+
+export { DISTRIBUTION_FIELD_IDS };
+
+export function getEffectiveFormValues(formValues, includeRealEstate, includeDistributions = false) {
+  let result = formValues;
+  if (!includeRealEstate) {
+    const zeros = Object.fromEntries([...REAL_ESTATE_FIELD_IDS].map((id) => [id, "0"]));
+    result = { ...result, ...zeros };
+  }
+  if (!includeDistributions) {
+    // Disable distributions by zeroing the annual payout; other fields keep defaults for validation.
+    result = { ...result, annualDistribution: "0" };
+  }
+  return result;
 }
 
 export function formatCurrency(value) {
@@ -393,6 +441,10 @@ export function validateFormValues(formValues, bulletLoan = false) {
       privateEtfPartialExemptionRate: PRIVATE_ETF_PARTIAL_EXEMPTION_RATE,
       saverAllowance: parsedValues.saverAllowance,
       projectionYears: parsedValues.projectionYears,
+      annualDistribution: parsedValues.annualDistribution,
+      destinatarCount: parsedValues.destinatarCount,
+      destinatarTaxRate: parsedValues.destinatarTaxRate / 100,
+      destinatarSaverAllowance: parsedValues.destinatarSaverAllowance,
     },
   };
 }
@@ -790,6 +842,13 @@ export function calculateProjection(input) {
       compareMaintenanceEtfSaleGross: 0,
       compareMaintenanceEtfSaleTax: 0,
       compareMaintenanceEtfSaleNet: 0,
+      // Destinatärszahlungen Jahr 0
+      distributionGross: 0,
+      distributionTax: 0,
+      distributionNet: 0,
+      distributionEtfSaleGross: 0,
+      distributionEtfSaleTax: 0,
+      distributionEtfSaleNet: 0,
     },
   ];
 
@@ -1093,6 +1152,48 @@ export function calculateProjection(input) {
     const erbsInstallmentShare =
       erbsCurrentCycleAmount > 0 ? erbsInstallmentPaid / erbsCurrentCycleAmount : 0;
 
+    // Destinatärszahlungen (§ 20 Abs. 1 Nr. 9 EStG): jährliche Ausschüttung nach KSt
+    let distributionGross = 0;
+    let distributionTax = 0;
+    let distributionNet = 0;
+    let distributionEtfSaleGross = 0;
+    let distributionEtfSaleTax = 0;
+    let distributionEtfSaleNet = 0;
+
+    if (input.annualDistribution > 0) {
+      distributionGross = input.annualDistribution;
+
+      // Ausschüttung aus ETF finanzieren, falls Cash nicht ausreicht
+      if (distributionGross > foundationCash && foundationEtfBalance > 0) {
+        const distShortfall = distributionGross - foundationCash;
+        const distSale = computePartialEtfSale(
+          distShortfall,
+          foundationEtfBalance,
+          foundationEtfContributions,
+          foundationEtfTaxedGains,
+          input.foundationEtfTaxRate,
+          input.foundationEtfPartialExemptionRate,
+        );
+        distributionEtfSaleGross = distSale.grossSale;
+        distributionEtfSaleTax = distSale.saleTax;
+        distributionEtfSaleNet = distSale.netProceeds;
+        foundationCash += distSale.netProceeds;
+        foundationEtfBalance -= distSale.grossSale;
+        foundationEtfContributions *= (1 - distSale.fraction);
+        foundationEtfTaxedGains *= (1 - distSale.fraction);
+      }
+
+      // Steuer auf Destinatärsebene (§ 20 Abs. 1 Nr. 9 EStG; Abgeltungsteuer)
+      const perPersonGross = distributionGross / input.destinatarCount;
+      const taxablePerPerson = Math.max(0, perPersonGross - input.destinatarSaverAllowance);
+      const taxPerPerson = taxablePerPerson * input.destinatarTaxRate;
+      distributionTax = taxPerPerson * input.destinatarCount;
+      distributionNet = distributionGross - distributionTax;
+
+      // Brutto-Ausschüttung mindert Stiftungsliquidität
+      foundationCash -= distributionGross;
+    }
+
     const foundationEtf = applyEtfYear({
       cash: foundationCash,
       etfBalance: foundationEtfBalance,
@@ -1301,6 +1402,13 @@ export function calculateProjection(input) {
       etfSaleNetForPurchase,
       personCumulativeGrossInterest,
       personCumulativeInterestTax,
+      // Destinatärszahlungen
+      distributionGross,
+      distributionTax,
+      distributionNet,
+      distributionEtfSaleGross,
+      distributionEtfSaleTax,
+      distributionEtfSaleNet,
     });
   }
 

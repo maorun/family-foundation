@@ -4,6 +4,7 @@ import {
   DEFAULT_PERSONAL_TAX_STEPS,
   DEFAULT_RELATIONSHIP_ID,
   applyEtfYear,
+  calculateGiftTaxByBrackets,
   calculateProjection,
   computePartialEtfSale,
   createProjectionInput,
@@ -12,6 +13,53 @@ import {
   validateFormValues,
   validatePersonalTaxSteps,
 } from "./projection";
+
+describe("calculateGiftTaxByBrackets", () => {
+  it("returns 0 for zero or negative taxable amount", () => {
+    expect(calculateGiftTaxByBrackets(0, "I")).toBe(0);
+    expect(calculateGiftTaxByBrackets(-1000, "I")).toBe(0);
+  });
+
+  it("applies lowest bracket rate for amounts within first bracket (class I)", () => {
+    // 50,000 € ≤ 75,000 € → 7 %
+    expect(calculateGiftTaxByBrackets(50_000, "I")).toBeCloseTo(3_500, 2);
+  });
+
+  it("applies correct rate for amounts within second bracket (class I)", () => {
+    // 200,000 € in 11 %-Stufe (75,000–300,000 €); Härteklausel greift nicht
+    // Grenzwert vorige Stufe: 75,000 × 7 % = 5,250 €
+    // Steuer: 200,000 × 11 % = 22,000 €
+    // Mehrbetrag: 22,000 − 5,250 = 16,750 €; 50 % des Überschusses: 0.5 × 125,000 = 62,500 € → kein Cap
+    expect(calculateGiftTaxByBrackets(200_000, "I")).toBeCloseTo(22_000, 2);
+  });
+
+  it("applies § 19 Abs. 3 ErbStG hardship clause at bracket boundary (class I)", () => {
+    // 76,000 € liegt knapp über der 75,000 €-Grenze
+    // Reguläre Steuer: 76,000 × 11 % = 8,360 €
+    // Steuer in vorletzter Stufe: 75,000 × 7 % = 5,250 €
+    // Mehrbetrag: 8,360 − 5,250 = 3,110 €; 50 % des Überschusses: 0.5 × 1,000 = 500 € → Cap greift!
+    // Härtebetrag: 5,250 + 500 = 5,750 €
+    expect(calculateGiftTaxByBrackets(76_000, "I")).toBeCloseTo(5_750, 2);
+  });
+
+  it("applies correct flat rate for class III within first bracket", () => {
+    // 1,000,000 € ≤ 6,000,000 € → 30 %
+    expect(calculateGiftTaxByBrackets(1_000_000, "III")).toBeCloseTo(300_000, 2);
+  });
+
+  it("applies higher rate for class III above 6,000,000 € boundary", () => {
+    // 6,000,001 € → 50 %; Härteklausel: 6,000,000 × 30 % = 1,800,000 €; excess = 1 €; cap = 0.5 €
+    // 6,000,001 × 50 % = 3,000,000.50 €; Mehrbetrag = 1,200,000.50 € >> 0.5 € → Cap greift
+    expect(calculateGiftTaxByBrackets(6_000_001, "III")).toBeCloseTo(1_800_000.5, 1);
+  });
+
+  it("applies class II rates correctly", () => {
+    // 400,000 € in Steuerklasse II → Stufe 300,000–600,000 €: 25 %
+    // Grenzwert vorige Stufe: 300,000 × 20 % = 60,000 €
+    // Steuer: 400,000 × 25 % = 100,000 €; Mehrbetrag: 40,000 €; 50 % Überschuss: 0.5 × 100,000 = 50,000 → kein Cap
+    expect(calculateGiftTaxByBrackets(400_000, "II")).toBeCloseTo(100_000, 2);
+  });
+});
 
 describe("computePartialEtfSale", () => {
   it("returns zero sale for non-positive inputs", () => {

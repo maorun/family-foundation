@@ -126,36 +126,99 @@ export const FIELD_DEFINITIONS = [
   },
 ];
 
-// Modellannahme: Vereinfachte feste Schenkungssteuer je Begünstigtenkreis
-// mit pauschalem Freibetrag gemäß gewählter Verwandtschaftsgruppe.
-// (ohne Stufenlogik und Sonderfälle).
+// § 19 Abs. 1 ErbStG – Stufentarif für Schenkung- und Erbschaftsteuer
+// Jede Stufe enthält die obere Wertgrenze (upTo) und den Steuersatz (rate).
+// Der Satz gilt jeweils für den gesamten steuerpflichtigen Erwerb.
+export const GIFT_TAX_BRACKETS = {
+  I: [
+    { upTo: 75_000, rate: 0.07 },
+    { upTo: 300_000, rate: 0.11 },
+    { upTo: 600_000, rate: 0.15 },
+    { upTo: 6_000_000, rate: 0.19 },
+    { upTo: 13_000_000, rate: 0.23 },
+    { upTo: 26_000_000, rate: 0.27 },
+    { upTo: Infinity, rate: 0.30 },
+  ],
+  II: [
+    { upTo: 75_000, rate: 0.15 },
+    { upTo: 300_000, rate: 0.20 },
+    { upTo: 600_000, rate: 0.25 },
+    { upTo: 6_000_000, rate: 0.30 },
+    { upTo: 13_000_000, rate: 0.35 },
+    { upTo: 26_000_000, rate: 0.40 },
+    { upTo: Infinity, rate: 0.43 },
+  ],
+  III: [
+    { upTo: 6_000_000, rate: 0.30 },
+    { upTo: Infinity, rate: 0.50 },
+  ],
+};
+
+/**
+ * Berechnet die Schenkung-/Erbschaftsteuer nach dem Stufentarif des § 19 Abs. 1 ErbStG
+ * unter Anwendung der Härtefallregelung des § 19 Abs. 3 ErbStG.
+ *
+ * Die Härtefallregelung begrenzt den Steuermehrbetrag beim Überschreiten einer
+ * Wertgrenze auf 50 % des Mehrbetrags des steuerpflichtigen Erwerbs über diese Grenze.
+ *
+ * @param {number} taxableAmount - Steuerpflichtiger Erwerb nach Abzug des Freibetrags (≥ 0)
+ * @param {"I"|"II"|"III"} taxClass - Steuerklasse gem. § 15 ErbStG
+ * @returns {number} Festzusetzende Steuer
+ */
+export function calculateGiftTaxByBrackets(taxableAmount, taxClass) {
+  if (taxableAmount <= 0) return 0;
+  const brackets = GIFT_TAX_BRACKETS[taxClass];
+  let bracketIdx = brackets.findIndex((b) => taxableAmount <= b.upTo);
+  // Defensive fallback: the last bracket always has upTo: Infinity, so this is
+  // normally unreachable, but guards against accidental table truncation.
+  if (bracketIdx === -1) bracketIdx = brackets.length - 1;
+
+  const tax = taxableAmount * brackets[bracketIdx].rate;
+
+  // § 19 Abs. 3 ErbStG: Härteklausel – der Steuermehrbetrag gegenüber der
+  // nächstniedrigen Wertstufe darf 50 % des diese Stufe übersteigenden Betrages
+  // nicht überschreiten.
+  if (bracketIdx > 0) {
+    const prev = brackets[bracketIdx - 1];
+    const taxAtPrevCeiling = prev.upTo * prev.rate;
+    const excess = taxableAmount - prev.upTo;
+    if (tax - taxAtPrevCeiling > 0.5 * excess) {
+      return taxAtPrevCeiling + 0.5 * excess;
+    }
+  }
+
+  return tax;
+}
+
+// Schenkungsteuer-Tarif je Begünstigtenkreis gemäß § 15 und § 19 ErbStG.
+// Der progressive Stufentarif wird über calculateGiftTaxByBrackets() angewendet.
 export const RELATIONSHIP_OPTIONS = [
   {
     id: "class1-children-only",
     label: "Reine Kinder-Stiftung: ausschließlich Ehe-/Lebenspartner oder eigene Kinder (Steuerklasse I, Freibetrag 400.000 €)",
     shortLabel: "Steuerklasse I (400.000 €)",
-    giftTaxRate: 0.15,
+    taxClass: "I",
     giftTaxAllowance: 400_000,
   },
   {
     id: "class1-multigeneration",
     label: "Mehrgenerationen-Stiftung: auch Enkel/Urenkel als (spätere) Begünstigte (Steuerklasse I, Freibetrag 100.000 €)",
     shortLabel: "Steuerklasse I (100.000 €)",
-    giftTaxRate: 0.15,
+    taxClass: "I",
     giftTaxAllowance: 100_000,
   },
   {
     id: "class2",
     label: "Erweiterte Familie: z. B. Geschwister, Nichten/Neffen, Schwiegerkinder (Steuerklasse II, Freibetrag 20.000 €)",
     shortLabel: "Steuerklasse II (20.000 €)",
-    giftTaxRate: 0.25,
+    taxClass: "II",
     giftTaxAllowance: 20_000,
   },
   {
     id: "class3",
     label: "Nicht verwandt / Dritte (Steuerklasse III, Freibetrag 20.000 €)",
     shortLabel: "Steuerklasse III (20.000 €)",
-    giftTaxRate: 0.3,
+    taxClass: "III",
     giftTaxAllowance: 20_000,
   },
 ];
@@ -168,7 +231,7 @@ export const DEFAULT_PERSONAL_TAX_STEPS = [{ fromYear: "1", rate: "42" }];
 export const ERBERSATZ_CYCLE_YEARS = 30;
 export const ERBERSATZ_CHILDREN = 2;
 export const ERBERSATZ_CHILD_ALLOWANCE = 400_000; // Freibetrag je Kind, Steuerklasse I
-export const ERBERSATZ_TAX_RATE = 0.15; // vereinfachter Pauschalsatz, Steuerklasse I (Kinder)
+export const ERBERSATZ_TAX_CLASS = "I"; // Steuerklasse für fiktive Kinder (§ 15 Abs. 1 Nr. 2 ErbStG)
 const FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE = 0.8; // 80 % gem. § 20 InvStG für körperschaftsteuerpflichtige Anleger (Aktienfonds)
 const PRIVATE_ETF_PARTIAL_EXEMPTION_RATE = 0.3; // 30 % gem. § 20 InvStG für private Anleger (Aktienfonds)
 // Körperschaftsteuer (§ 23 Abs. 1 KStG) für Familienstiftungen
@@ -411,7 +474,7 @@ export function createProjectionInput(
 ) {
   return {
     ...validatedInput,
-    giftTaxRate: relationship.giftTaxRate,
+    giftTaxClass: relationship.taxClass,
     giftTaxAllowance: relationship.giftTaxAllowance,
     surplusToRepayment,
     personalTaxSteps,
@@ -550,7 +613,7 @@ export function calculateProjection(input) {
   const annualRent = input.monthlyRent * 12;
   const giftTaxAllowance = Math.max(0, input.giftTaxAllowance ?? 0);
   const taxableGiftBase = Math.max(0, input.initialCapital - giftTaxAllowance);
-  const giftTax = taxableGiftBase * input.giftTaxRate;
+  const giftTax = calculateGiftTaxByBrackets(taxableGiftBase, input.giftTaxClass);
   const realEstateTax = propertyValue * input.realEstateTaxRate;
 
   // Grunderwerbsteuer aufgeteilt auf Gebäude und Grundstück (proportional zum Kaufpreis)
@@ -971,7 +1034,7 @@ export function calculateProjection(input) {
         0,
         netWealthForErbs / ERBERSATZ_CHILDREN - ERBERSATZ_CHILD_ALLOWANCE,
       );
-      erbsTriggeredAmount = ERBERSATZ_CHILDREN * perChildTaxable * ERBERSATZ_TAX_RATE;
+      erbsTriggeredAmount = ERBERSATZ_CHILDREN * calculateGiftTaxByBrackets(perChildTaxable, ERBERSATZ_TAX_CLASS);
       // Ratenzahlung über 30 Jahre (§ 24 ErbStG)
       erbsRemainingLiability += erbsTriggeredAmount;
       erbsCurrentCycleAmount = erbsTriggeredAmount;
@@ -1182,6 +1245,7 @@ export function calculateProjection(input) {
     taxableGiftBase,
     annualRent,
     giftTax,
+    effectiveGiftTaxRate: taxableGiftBase > 0 ? giftTax / taxableGiftBase : 0,
     realEstateTax,
     realEstateTaxBuildingPortion,
     realEstateTaxLandPortion,

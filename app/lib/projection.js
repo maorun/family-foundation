@@ -169,6 +169,8 @@ export function calculateGiftTaxByBrackets(taxableAmount, taxClass) {
   if (taxableAmount <= 0) return 0;
   const brackets = GIFT_TAX_BRACKETS[taxClass];
   let bracketIdx = brackets.findIndex((b) => taxableAmount <= b.upTo);
+  // Defensive fallback: the last bracket always has upTo: Infinity, so this is
+  // normally unreachable, but guards against accidental table truncation.
   if (bracketIdx === -1) bracketIdx = brackets.length - 1;
 
   const tax = taxableAmount * brackets[bracketIdx].rate;

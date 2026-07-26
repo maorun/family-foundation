@@ -250,6 +250,7 @@ describe("selfUse KfW loan", () => {
   });
 
   it("KfW annual interest is charged on the remaining balance", () => {
+    // Interest rate "1" is a form value string representing 1 % p.a. (divided by 100 in validateFormValues)
     const input = buildInput({ selfUseKfwLoanAmount: "100000", selfUseKfwLoanInterestRate: "1", selfUseKfwLoanTermYears: "10" });
     const result = calculateProjection(input);
 

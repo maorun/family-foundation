@@ -749,6 +749,7 @@ export function calculateProjection(input) {
   // Kein Darlehen an Stiftung, keine AfA (da Eigennutzung), keine Mieteinnahmen.
   // Optional: KfW-Förderkredit zu sehr günstigen Konditionen; der nicht in die Immobilie
   // geflossene Betrag wird in ETFs investiert, jährliche Tilgung und Zinsen werden abgezogen.
+  // Fallback-Werte für den Fall, dass input-Felder fehlen: Betrag 0 → kein Kredit, Zins 0 → keine Zinslast.
   const selfUseKfwLoanAmount = input.selfUseKfwLoanAmount ?? 0;
   const selfUseKfwLoanInterestRate = input.selfUseKfwLoanInterestRate ?? 0;
   const selfUseKfwLoanTermYears = input.selfUseKfwLoanTermYears ?? 10;

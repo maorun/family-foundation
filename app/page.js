@@ -53,13 +53,20 @@ const FIELD_HELP_TEXT_BY_ID = {
 };
 
 function normalizeConfig(rawConfig = {}) {
+  const personalTaxSteps = Array.isArray(rawConfig.personalTaxSteps)
+    ? rawConfig.personalTaxSteps
+    : DEFAULT_PERSONAL_TAX_STEPS;
+  const maintenanceEvents = Array.isArray(rawConfig.maintenanceEvents)
+    ? rawConfig.maintenanceEvents
+    : [];
+
   return {
     formValues: { ...DEFAULT_FORM_VALUES, ...(rawConfig.formValues ?? {}) },
     relationshipId: rawConfig.relationshipId ?? DEFAULT_RELATIONSHIP_ID,
     surplusToRepayment: rawConfig.surplusToRepayment ?? false,
     comparePaysRealEstateTax: rawConfig.comparePaysRealEstateTax ?? false,
     bundesland: rawConfig.bundesland ?? null,
-    personalTaxSteps: rawConfig.personalTaxSteps ?? DEFAULT_PERSONAL_TAX_STEPS,
+    personalTaxSteps,
     selectedOverviewYear: rawConfig.selectedOverviewYear ?? "all",
     includeRealEstate: rawConfig.includeRealEstate ?? false,
     bulletLoan: rawConfig.bulletLoan ?? false,
@@ -67,7 +74,7 @@ function normalizeConfig(rawConfig = {}) {
     bulletLoanReinvest: rawConfig.bulletLoanReinvest ?? false,
     lenderIsTenant: rawConfig.lenderIsTenant ?? false,
     tenantRentFromExternalFunds: rawConfig.tenantRentFromExternalFunds ?? false,
-    maintenanceEvents: rawConfig.maintenanceEvents ?? [],
+    maintenanceEvents,
   };
 }
 

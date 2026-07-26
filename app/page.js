@@ -2133,6 +2133,16 @@ export default function Home() {
                             </small>
                           </div>
                         )}
+                        {compareType === "selfUse" && row.selfUseMaintCashOut > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Instandhaltung (Eigennutzung)</dt>
+                            <dd className={styles.negative}>{formatCurrency(row.selfUseMaintCashOut)}</dd>
+                            <small className={styles.formula}>
+                              Kein Steuerabzug (Eigennutzung)
+                              {row.selfUseMaintEtfSaleGross > 0 && `; ETF-Verkauf ${formatCurrency(row.selfUseMaintEtfSaleGross)} (Steuer ${formatCurrency(row.selfUseMaintEtfSaleTax)}, Netto ${formatCurrency(row.selfUseMaintEtfSaleNet)})`}
+                            </small>
+                          </div>
+                        )}
                       </dl>
                     </div>
                   </div>

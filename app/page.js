@@ -491,7 +491,7 @@ export default function Home() {
         : compareType === "etfOnly"
           ? `Gleiches Startkapital (${formatCurrency(result.input.initialCapital)}) ohne Immobilie, vollständig in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`
           : compareType === "selfUse"
-            ? `Eigennutzung ohne AfA, gesparte Miete (${formatCurrency(result.annualRent)} p.a.) steuerlich nicht relevant${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
+            ? `Eigennutzung ohne AfA, kein Mietvorteil (fairer Vergleich)${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`
             : `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
     },
   ].filter((card) => (!card.realEstateOnly || includeRealEstate) && (!card.loanOnly || result.input.loanAmount > 0));
@@ -1658,7 +1658,7 @@ export default function Home() {
                     onChange={() => handleCompareTypeChange("selfUse")}
                     className={styles.radio}
                   />
-                  <span>Selbstnutzung (keine AfA, keine Mieteinnahmen; gesparte Miete als steuerfreier Vorteil)</span>
+                  <span>Selbstnutzung (keine AfA, keine Mieteinnahmen; kein Mietvorteil — fairer Vergleich)</span>
                 </label>
               </div>
               {compareType !== "etfOnly" && (
@@ -2115,7 +2115,7 @@ export default function Home() {
                             <small className={styles.formula}>ETF (nach Verkaufsteuer) — gleiches Startkapital ({formatCurrency(result.input.initialCapital)}), keine Immobilie, kein Darlehen, kein Verwaltungsaufwand</small>
                           )}
                           {compareType === "selfUse" && (
-                            <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — Eigennutzung, keine AfA, gesparte Miete {formatCurrency(result.annualRent)} p.a.{compareTaxFormulaDetail}</small>
+                            <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — Eigennutzung, keine AfA, kein Mietvorteil{compareTaxFormulaDetail}</small>
                           )}
                           {(compareType === "rental" || !includeRealEstate) && (
                             <small className={styles.formula}>Kasse + ETF (nach Verkaufsteuer) + {formatCurrency(result.propertyValue)} (Immobilienwert) — ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Miete zu {formatPercent(row.personalTaxRate * 100)} versteuert{compareTaxFormulaDetail}</small>
@@ -2130,6 +2130,16 @@ export default function Home() {
                               {row.compareMaintenanceFullDeduction > 0 && row.compareMaintenanceAfaAddition > 0 && "; "}
                               {row.compareMaintenanceAfaAddition > 0 && `${formatCurrency(row.compareMaintenanceAfaAddition)} AfA-aktiviert`}
                               {row.compareMaintenanceEtfSaleGross > 0 && `; ETF-Verkauf ${formatCurrency(row.compareMaintenanceEtfSaleGross)} (Steuer ${formatCurrency(row.compareMaintenanceEtfSaleTax)}, Netto ${formatCurrency(row.compareMaintenanceEtfSaleNet)})`}
+                            </small>
+                          </div>
+                        )}
+                        {compareType === "selfUse" && row.selfUseMaintCashOut > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Instandhaltung (Eigennutzung)</dt>
+                            <dd className={styles.negative}>{formatCurrency(row.selfUseMaintCashOut)}</dd>
+                            <small className={styles.formula}>
+                              Kein Steuerabzug (Eigennutzung)
+                              {row.selfUseMaintEtfSaleGross > 0 && `; ETF-Verkauf ${formatCurrency(row.selfUseMaintEtfSaleGross)} (Steuer ${formatCurrency(row.selfUseMaintEtfSaleTax)}, Netto ${formatCurrency(row.selfUseMaintEtfSaleNet)})`}
                             </small>
                           </div>
                         )}

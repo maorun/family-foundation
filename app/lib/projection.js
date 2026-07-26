@@ -770,6 +770,10 @@ export function calculateProjection(input) {
       selfUseEtfLiquidationValue: 0,
       selfUseVorabTax: 0,
       selfUseEtfSaleTax: 0,
+      selfUseMaintCashOut: 0,
+      selfUseMaintEtfSaleGross: 0,
+      selfUseMaintEtfSaleTax: 0,
+      selfUseMaintEtfSaleNet: 0,
       propertyOwned: !deferredPurchase,
       propertyBoughtThisYear: false,
       etfSaleForPurchase: 0,
@@ -1174,8 +1178,39 @@ export function calculateProjection(input) {
     etfOnlyEtfContributions = etfOnlyEtf.etfContributionsAfterInvestment;
     etfOnlyEtfTaxedGains = etfOnlyEtf.etfTaxedGainsAfterYear;
 
-    // Selbstnutzung: gesparte Miete fließt als impliziter steuerfreier Cashflow zu
-    selfUseCash += annualRent;
+    // Selbstnutzung: Instandhaltungsereignisse (kein Steuerabzug, da Eigennutzung)
+    let selfUseMaintCashOut = 0;
+    let selfUseMaintEtfSaleGross = 0;
+    let selfUseMaintEtfSaleTax = 0;
+    let selfUseMaintEtfSaleNet = 0;
+
+    for (const evt of (input.maintenanceEvents ?? []).filter((e) => e.year === year)) {
+      selfUseMaintCashOut += evt.amount;
+    }
+
+    // Instandhaltung aus ETF finanzieren, wenn Kasse nicht ausreicht
+    if (selfUseMaintCashOut > 0 && selfUseMaintCashOut > selfUseCash && selfUseEtfBalance > 0) {
+      const selfUseMaintShortfall = selfUseMaintCashOut - selfUseCash;
+      const selfUseMaintSale = computePartialEtfSale(
+        selfUseMaintShortfall,
+        selfUseEtfBalance,
+        selfUseEtfContributions,
+        selfUseEtfTaxedGains,
+        input.privateEtfTaxRate,
+        input.privateEtfPartialExemptionRate,
+      );
+      selfUseMaintEtfSaleGross = selfUseMaintSale.grossSale;
+      selfUseMaintEtfSaleTax = selfUseMaintSale.saleTax;
+      selfUseMaintEtfSaleNet = selfUseMaintSale.netProceeds;
+      selfUseCash += selfUseMaintSale.netProceeds;
+      selfUseEtfBalance -= selfUseMaintSale.grossSale;
+      selfUseEtfContributions *= 1 - selfUseMaintSale.fraction;
+      selfUseEtfTaxedGains *= 1 - selfUseMaintSale.fraction;
+    }
+
+    selfUseCash -= selfUseMaintCashOut;
+
+    // Selbstnutzung: kein Mietvorteil – fairer Vergleich ohne Miete/gesparte Miete
     const selfUseEtf = applyEtfYear({
       cash: selfUseCash,
       etfBalance: selfUseEtfBalance,
@@ -1293,6 +1328,10 @@ export function calculateProjection(input) {
       selfUseEtfLiquidationValue: selfUseEtf.etfLiquidationValue,
       selfUseVorabTax: selfUseEtf.vorabTax,
       selfUseEtfSaleTax: selfUseEtf.saleTax,
+      selfUseMaintCashOut,
+      selfUseMaintEtfSaleGross,
+      selfUseMaintEtfSaleTax,
+      selfUseMaintEtfSaleNet,
       // Deferred-purchase fields
       propertyOwned: foundationOwnsProperty,
       propertyBoughtThisYear,

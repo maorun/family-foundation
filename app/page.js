@@ -82,6 +82,7 @@ function normalizeConfig(rawConfig = {}) {
     bulletLoanReinvest: rawConfig.bulletLoanReinvest ?? false,
     lenderIsTenant: rawConfig.lenderIsTenant ?? false,
     tenantRentFromExternalFunds: rawConfig.tenantRentFromExternalFunds ?? false,
+    founderPaysSetupCost: rawConfig.founderPaysSetupCost ?? false,
     maintenanceEvents,
   };
 }
@@ -108,6 +109,7 @@ function calculateResultFromConfig(config) {
       normalized.tenantRentFromExternalFunds,
       maintenanceValidation.parsedEvents,
       normalized.bulletLoanReinvest,
+      normalized.founderPaysSetupCost,
     ),
   );
 }
@@ -128,6 +130,7 @@ function toScenarioConfig(state) {
     bulletLoanReinvest: state.bulletLoanReinvest,
     lenderIsTenant: state.lenderIsTenant,
     tenantRentFromExternalFunds: state.tenantRentFromExternalFunds,
+    founderPaysSetupCost: state.founderPaysSetupCost,
     maintenanceEvents: state.maintenanceEvents,
   };
 }
@@ -188,6 +191,7 @@ export default function Home() {
       bulletLoanReinvest,
       lenderIsTenant,
       tenantRentFromExternalFunds,
+      founderPaysSetupCost,
       maintenanceEvents,
       scenarios,
       scenarioNameInput,
@@ -210,6 +214,7 @@ export default function Home() {
     bulletLoanReinvest: false,
     lenderIsTenant: false,
     tenantRentFromExternalFunds: false,
+    founderPaysSetupCost: false,
     maintenanceEvents: [],
     scenarios: [],
     scenarioNameInput: "",
@@ -290,6 +295,7 @@ export default function Home() {
               bulletLoanReinvest,
               lenderIsTenant,
               tenantRentFromExternalFunds,
+              founderPaysSetupCost,
               maintenanceEvents,
             },
             scenarios,
@@ -315,6 +321,7 @@ export default function Home() {
     bulletLoanReinvest,
     lenderIsTenant,
     tenantRentFromExternalFunds,
+    founderPaysSetupCost,
     maintenanceEvents,
     scenarios,
   ]);
@@ -724,6 +731,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -752,6 +760,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -779,6 +788,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -806,6 +816,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -833,6 +844,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -872,6 +884,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -902,6 +915,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -933,6 +947,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -962,6 +977,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -992,6 +1008,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 checked ? currentState.bulletLoanReinvest : false,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -1026,6 +1043,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 checked,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -1057,6 +1075,7 @@ export default function Home() {
                 nextTenantRentFromExternalFunds,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -1084,6 +1103,35 @@ export default function Home() {
                 checked,
                 validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleFounderPaysSetupCostToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        founderPaysSetupCost: checked,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
+                checked,
               ),
             )
           : currentState.result,
@@ -1115,6 +1163,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(nextEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -1143,6 +1192,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(nextEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -1173,6 +1223,7 @@ export default function Home() {
                 currentState.tenantRentFromExternalFunds,
                 validateMaintenanceEvents(nextEvents).parsedEvents,
                 currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
               ),
             )
           : currentState.result,
@@ -1387,6 +1438,18 @@ export default function Home() {
                   <h3 className={styles.inputSectionTitle}>Gründung</h3>
                   <div className={styles.grid}>
                     {foundingFields.map(renderField)}
+                  </div>
+                  <div className={styles.checkboxRow}>
+                    <input
+                      id="founderPaysSetupCost"
+                      type="checkbox"
+                      checked={founderPaysSetupCost}
+                      onChange={(event) => handleFounderPaysSetupCostToggle(event.target.checked)}
+                      className={styles.checkbox}
+                    />
+                    <label htmlFor="founderPaysSetupCost" className={styles.checkboxLabel}>
+                      Gründungskosten vom Stifter/Darlehensgeber getragen (nicht von der Stiftung)
+                    </label>
                   </div>
                 </div>
                 <div className={styles.inputSection}>
@@ -1985,9 +2048,9 @@ export default function Home() {
                               <dt>Startliquidität</dt>
                               <dd>{formatCurrency(row.foundationCash)}</dd>
                               {result.deferredPurchase ? (
-                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) — Immobilienkauf zurückgestellt</small>
+                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer){result.input.founderPaysSetupCost ? " — Gründungskosten vom Stifter getragen" : ` − ${formatCurrency(result.foundationSetupCost)} (Gründungskosten)`} — Immobilienkauf zurückgestellt</small>
                               ) : (
-                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer){result.input.founderPaysSetupCost ? " — Gründungskosten vom Stifter getragen" : ` − ${formatCurrency(result.foundationSetupCost)} (Gründungskosten)`} + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                               )}
                             </>
                           )}
@@ -1996,7 +2059,7 @@ export default function Home() {
                           <dt>Steuerliches Ergebnis</dt>
                           <dd>{formatCurrency(row.taxableResult)}</dd>
                           {row.year === 0 && (
-                            <small className={styles.formula}>− {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten)</small>
+                            <small className={styles.formula}>− {formatCurrency(result.giftTax)} (Schenkungssteuer){result.input.founderPaysSetupCost ? " — Gründungskosten vom Stifter getragen, kein Abzug" : ` − ${formatCurrency(result.foundationSetupCost)} (Gründungskosten)`}</small>
                           )}
                           {row.year > 0 && row.propertyOwned && (
                             <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>
@@ -2272,9 +2335,9 @@ export default function Home() {
                       <dd>{formatCurrency(row.foundationCash)}</dd>
                       {row.year === 0 ? (
                         result.deferredPurchase ? (
-                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) — kein Ankauf, ETF-Investition ab Jahr 1</small>
+                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer){result.input.founderPaysSetupCost ? " — Gründungskosten vom Stifter getragen" : ` − ${formatCurrency(result.foundationSetupCost)} (Gründungskosten)`} — kein Ankauf, ETF-Investition ab Jahr 1</small>
                         ) : (
-                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer){result.input.founderPaysSetupCost ? " — Gründungskosten vom Stifter getragen" : ` − ${formatCurrency(result.foundationSetupCost)} (Gründungskosten)`} + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                         )
                       ) : row.propertyBoughtThisYear ? (
                         <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""}{row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>

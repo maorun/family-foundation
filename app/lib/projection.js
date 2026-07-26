@@ -678,6 +678,8 @@ export function calculateProjection(input) {
   // Tracks the total depreciable base including AfA-qualifying maintenance additions
   let effectiveDepreciableBase = deferredPurchase ? 0 : depreciableBuildingBase;
   // When the founder pays setup costs, their initial cash is reduced by that amount.
+  // A negative starting balance represents money the founder spent at founding time and
+  // is gradually recovered through interest payments received from the foundation.
   let personCash = founderPaysSetupCost ? -foundationSetupCost : 0;
   let personEtfBalance = 0;
   let personEtfContributions = 0;

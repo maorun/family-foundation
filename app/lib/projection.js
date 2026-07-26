@@ -488,6 +488,7 @@ export function createProjectionInput(
   tenantRentFromExternalFunds = false,
   maintenanceEvents = [],
   bulletLoanReinvest = false,
+  founderPaysSetupCost = false,
 ) {
   return {
     ...validatedInput,
@@ -501,6 +502,7 @@ export function createProjectionInput(
     tenantRentFromExternalFunds,
     maintenanceEvents,
     bulletLoanReinvest,
+    founderPaysSetupCost,
   };
 }
 
@@ -633,6 +635,10 @@ export function calculateProjection(input) {
   const propertyValue = input.buildingValue + input.landValue;
   const annualRent = input.monthlyRent * 12;
   const foundationSetupCost = Math.max(0, input.foundationSetupCost ?? 0);
+  const founderPaysSetupCost = input.founderPaysSetupCost ?? false;
+  // When the founder/lender pays the setup costs out of their own pocket, the
+  // foundation does not bear them – only the person's initial cash is reduced.
+  const foundationEffectiveSetupCost = founderPaysSetupCost ? 0 : foundationSetupCost;
   const giftTaxAllowance = Math.max(0, input.giftTaxAllowance ?? 0);
   const taxableGiftBase = Math.max(0, input.initialCapital - giftTaxAllowance);
   const giftTax = calculateGiftTaxByBrackets(taxableGiftBase, input.giftTaxClass);
@@ -653,7 +659,7 @@ export function calculateProjection(input) {
     (input.comparePaysRealEstateTax ? realEstateTaxBuildingPortion : 0);
 
   const initialCash =
-    input.initialCapital - giftTax - foundationSetupCost + input.loanAmount - propertyValue - realEstateTax;
+    input.initialCapital - giftTax - foundationEffectiveSetupCost + input.loanAmount - propertyValue - realEstateTax;
 
   // Deferred purchase: if there is not enough money even with the loan, invest in ETF first
   // and buy the property once the ETF has grown enough to cover property + transfer tax
@@ -663,7 +669,7 @@ export function calculateProjection(input) {
   let purchaseYear = deferredPurchase ? null : 0;
 
   // In deferred mode: start with equity only (no loan taken, no property bought yet)
-  let foundationCash = deferredPurchase ? input.initialCapital - giftTax - foundationSetupCost : initialCash;
+  let foundationCash = deferredPurchase ? input.initialCapital - giftTax - foundationEffectiveSetupCost : initialCash;
   let foundationEtfBalance = 0;
   let foundationEtfContributions = 0;
   let foundationEtfTaxedGains = 0;
@@ -671,7 +677,10 @@ export function calculateProjection(input) {
   let remainingDepreciableBuildingValue = deferredPurchase ? 0 : depreciableBuildingBase;
   // Tracks the total depreciable base including AfA-qualifying maintenance additions
   let effectiveDepreciableBase = deferredPurchase ? 0 : depreciableBuildingBase;
-  let personCash = 0;
+  // When the founder pays setup costs, their initial cash is reduced by that amount.
+  // A negative starting balance represents money the founder spent at founding time and
+  // is gradually recovered through interest payments received from the foundation.
+  let personCash = founderPaysSetupCost ? -foundationSetupCost : 0;
   let personEtfBalance = 0;
   let personEtfContributions = 0;
   let personEtfTaxedGains = 0;
@@ -729,13 +738,13 @@ export function calculateProjection(input) {
       foundationEtfDeficitSaleGross: 0,
       foundationEtfDeficitSaleTax: 0,
       foundationEtfDeficitSaleNet: 0,
-      taxableResult: -giftTax - foundationSetupCost,
+      taxableResult: -giftTax - foundationEffectiveSetupCost,
       foundationWealth: deferredPurchase
         ? foundationCash
         : foundationCash + propertyValue - remainingLoan,
       remainingLoan,
       personNetCashFlow: 0,
-      personAssetPosition: deferredPurchase ? 0 : remainingLoan,
+      personAssetPosition: deferredPurchase ? personCash : remainingLoan + personCash,
       personCash,
       personEtfBalance,
       personEtfLiquidationValue: 0,
@@ -1377,5 +1386,7 @@ export const DEFAULT_RESULT = calculateProjection({
     false,
     false,
     [],
+    false,
+    false,
   ),
 });

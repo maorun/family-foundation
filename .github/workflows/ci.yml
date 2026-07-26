@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  lint-and-build:
+  lint-and-test-and-build:
     runs-on: ubuntu-latest
 
     steps:

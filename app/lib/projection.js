@@ -138,6 +138,32 @@ export const FIELD_DEFINITIONS = [
     integer: true,
     defaultValue: 10,
   },
+  {
+    id: "selfUseKfwLoanAmount",
+    label: "KfW-Darlehensbetrag (€)",
+    min: 0,
+    step: "1000",
+    defaultValue: 0,
+    selfUse: true,
+  },
+  {
+    id: "selfUseKfwLoanInterestRate",
+    label: "KfW-Zinssatz p.a. (%)",
+    min: 0,
+    step: "0.01",
+    defaultValue: 0.01,
+    selfUse: true,
+  },
+  {
+    id: "selfUseKfwLoanTermYears",
+    label: "KfW-Laufzeit (Jahre)",
+    min: 1,
+    max: 50,
+    step: "1",
+    integer: true,
+    defaultValue: 10,
+    selfUse: true,
+  },
 ];
 
 // § 19 Abs. 1 ErbStG – Stufentarif für Schenkung- und Erbschaftsteuer
@@ -393,6 +419,9 @@ export function validateFormValues(formValues, bulletLoan = false) {
       privateEtfPartialExemptionRate: PRIVATE_ETF_PARTIAL_EXEMPTION_RATE,
       saverAllowance: parsedValues.saverAllowance,
       projectionYears: parsedValues.projectionYears,
+      selfUseKfwLoanAmount: parsedValues.selfUseKfwLoanAmount,
+      selfUseKfwLoanInterestRate: parsedValues.selfUseKfwLoanInterestRate / 100,
+      selfUseKfwLoanTermYears: parsedValues.selfUseKfwLoanTermYears,
     },
   };
 }
@@ -718,12 +747,17 @@ export function calculateProjection(input) {
 
   // Vergleichsszenario: Selbstnutzung – Person kauft Immobilie selbst und nutzt sie
   // Kein Darlehen an Stiftung, keine AfA (da Eigennutzung), keine Mieteinnahmen.
-  // Jährlicher Vorteil: gesparte Miete (= annualRent) als impliziter steuerfreier Cashflow.
+  // Optional: KfW-Förderkredit zu sehr günstigen Konditionen; der nicht in die Immobilie
+  // geflossene Betrag wird in ETFs investiert, jährliche Tilgung und Zinsen werden abgezogen.
+  const selfUseKfwLoanAmount = input.selfUseKfwLoanAmount ?? 0;
+  const selfUseKfwLoanInterestRate = input.selfUseKfwLoanInterestRate ?? 0;
+  const selfUseKfwLoanTermYears = input.selfUseKfwLoanTermYears ?? 10;
   let selfUseCash =
-    input.initialCapital + input.loanAmount - propertyValue - privateRealEstateTax;
+    input.initialCapital + input.loanAmount - propertyValue - privateRealEstateTax + selfUseKfwLoanAmount;
   let selfUseEtfBalance = 0;
   let selfUseEtfContributions = 0;
   let selfUseEtfTaxedGains = 0;
+  let selfUseRemainingKfwLoan = selfUseKfwLoanAmount;
 
   const buildingBookValue0 = deferredPurchase ? 0 : depreciableBuildingBase + landBookBase;
 
@@ -774,7 +808,7 @@ export function calculateProjection(input) {
       etfOnlyVorabTax: 0,
       etfOnlyEtfSaleTax: 0,
       // Vergleichsvermögen Selbstnutzung Jahr 0
-      selfUseWealth: selfUseCash + propertyValue,
+      selfUseWealth: selfUseCash + propertyValue - selfUseRemainingKfwLoan,
       selfUseEtfBalance,
       selfUseEtfLiquidationValue: 0,
       selfUseVorabTax: 0,
@@ -783,6 +817,9 @@ export function calculateProjection(input) {
       selfUseMaintEtfSaleGross: 0,
       selfUseMaintEtfSaleTax: 0,
       selfUseMaintEtfSaleNet: 0,
+      selfUseRemainingKfwLoan,
+      selfUseKfwInterest: 0,
+      selfUseKfwRepayment: 0,
       propertyOwned: !deferredPurchase,
       propertyBoughtThisYear: false,
       etfSaleForPurchase: 0,
@@ -1197,6 +1234,20 @@ export function calculateProjection(input) {
       selfUseMaintCashOut += evt.amount;
     }
 
+    // Selbstnutzung: jährliche KfW-Tilgung und -Zinsen
+    let selfUseKfwInterest = 0;
+    let selfUseKfwRepayment = 0;
+    if (selfUseRemainingKfwLoan > 0) {
+      selfUseKfwInterest = selfUseRemainingKfwLoan * selfUseKfwLoanInterestRate;
+      const scheduledKfwRepayment =
+        selfUseKfwLoanTermYears > 0
+          ? selfUseKfwLoanAmount / selfUseKfwLoanTermYears
+          : selfUseRemainingKfwLoan;
+      selfUseKfwRepayment = Math.min(scheduledKfwRepayment, selfUseRemainingKfwLoan);
+      selfUseCash -= selfUseKfwInterest + selfUseKfwRepayment;
+      selfUseRemainingKfwLoan = Math.max(0, selfUseRemainingKfwLoan - selfUseKfwRepayment);
+    }
+
     // Instandhaltung aus ETF finanzieren, wenn Kasse nicht ausreicht
     if (selfUseMaintCashOut > 0 && selfUseMaintCashOut > selfUseCash && selfUseEtfBalance > 0) {
       const selfUseMaintShortfall = selfUseMaintCashOut - selfUseCash;
@@ -1332,7 +1383,7 @@ export function calculateProjection(input) {
       etfOnlyVorabTax: etfOnlyEtf.vorabTax,
       etfOnlyEtfSaleTax: etfOnlyEtf.saleTax,
       // Vergleichsvermögen Selbstnutzung (Eigennutzung ohne AfA, gesparte Miete)
-      selfUseWealth: selfUseCash + selfUseEtf.etfLiquidationValue + propertyValue,
+      selfUseWealth: selfUseCash + selfUseEtf.etfLiquidationValue + propertyValue - selfUseRemainingKfwLoan,
       selfUseEtfBalance,
       selfUseEtfLiquidationValue: selfUseEtf.etfLiquidationValue,
       selfUseVorabTax: selfUseEtf.vorabTax,
@@ -1341,6 +1392,9 @@ export function calculateProjection(input) {
       selfUseMaintEtfSaleGross,
       selfUseMaintEtfSaleTax,
       selfUseMaintEtfSaleNet,
+      selfUseRemainingKfwLoan,
+      selfUseKfwInterest,
+      selfUseKfwRepayment,
       // Deferred-purchase fields
       propertyOwned: foundationOwnsProperty,
       propertyBoughtThisYear,

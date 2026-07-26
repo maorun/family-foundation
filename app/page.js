@@ -354,8 +354,14 @@ export default function Home() {
   const compareTaxFormulaDetail = result.input.comparePaysRealEstateTax
     ? `, mit ${formatCurrency(result.privateRealEstateTax)} GrESt`
     : ", ohne GrESt";
+  const totalFoundingCost = result.giftTax + result.foundationSetupCost;
 
   const cards = [
+    {
+      title: "Gründungskosten gesamt (Jahr 0)",
+      value: formatCurrency(totalFoundingCost),
+      detail: `${formatCurrency(result.giftTax)} (Schenkungssteuer) + ${formatCurrency(result.foundationSetupCost)} (einmalige Gründungskosten)`,
+    },
     {
       title: "Schenkungssteuer bei Gründung",
       value: formatCurrency(result.giftTax),
@@ -1879,6 +1885,9 @@ export default function Home() {
                         <div className={styles.dataItem}>
                           <dt>Steuerliches Ergebnis</dt>
                           <dd>{formatCurrency(row.taxableResult)}</dd>
+                          {row.year === 0 && (
+                            <small className={styles.formula}>− {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten)</small>
+                          )}
                           {row.year > 0 && row.propertyOwned && (
                             <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA)</small>
                           )}

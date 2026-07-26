@@ -75,6 +75,17 @@
   margin-top: 16px;
 }
 
+.inputSection {
+  margin-bottom: 16px;
+}
+
+.inputSectionTitle {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
 .radioFieldset {
   margin: 0 0 16px;
   padding: 0;

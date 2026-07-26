@@ -7,6 +7,13 @@ export const FIELD_DEFINITIONS = [
     defaultValue: 100000,
   },
   {
+    id: "foundationSetupCost",
+    label: "Einmalige Gründungskosten (€)",
+    min: 0,
+    step: "100",
+    defaultValue: 25000,
+  },
+  {
     id: "annualAdminCost",
     label: "Verwaltungskosten p.a. (€)",
     min: 0,
@@ -367,6 +374,7 @@ export function validateFormValues(formValues, bulletLoan = false) {
     invalidIds,
     input: {
       initialCapital: parsedValues.initialCapital,
+      foundationSetupCost: parsedValues.foundationSetupCost,
       annualAdminCost: parsedValues.annualAdminCost,
       loanAmount: parsedValues.loanAmount,
       loanInterestRate: parsedValues.loanInterestRate / 100,
@@ -624,6 +632,7 @@ export function applyEtfYear({
 export function calculateProjection(input) {
   const propertyValue = input.buildingValue + input.landValue;
   const annualRent = input.monthlyRent * 12;
+  const foundationSetupCost = Math.max(0, input.foundationSetupCost ?? 0);
   const giftTaxAllowance = Math.max(0, input.giftTaxAllowance ?? 0);
   const taxableGiftBase = Math.max(0, input.initialCapital - giftTaxAllowance);
   const giftTax = calculateGiftTaxByBrackets(taxableGiftBase, input.giftTaxClass);
@@ -644,7 +653,7 @@ export function calculateProjection(input) {
     (input.comparePaysRealEstateTax ? realEstateTaxBuildingPortion : 0);
 
   const initialCash =
-    input.initialCapital - giftTax + input.loanAmount - propertyValue - realEstateTax;
+    input.initialCapital - giftTax - foundationSetupCost + input.loanAmount - propertyValue - realEstateTax;
 
   // Deferred purchase: if there is not enough money even with the loan, invest in ETF first
   // and buy the property once the ETF has grown enough to cover property + transfer tax
@@ -654,7 +663,7 @@ export function calculateProjection(input) {
   let purchaseYear = deferredPurchase ? null : 0;
 
   // In deferred mode: start with equity only (no loan taken, no property bought yet)
-  let foundationCash = deferredPurchase ? input.initialCapital - giftTax : initialCash;
+  let foundationCash = deferredPurchase ? input.initialCapital - giftTax - foundationSetupCost : initialCash;
   let foundationEtfBalance = 0;
   let foundationEtfContributions = 0;
   let foundationEtfTaxedGains = 0;
@@ -720,7 +729,7 @@ export function calculateProjection(input) {
       foundationEtfDeficitSaleGross: 0,
       foundationEtfDeficitSaleTax: 0,
       foundationEtfDeficitSaleNet: 0,
-      taxableResult: -giftTax,
+      taxableResult: -giftTax - foundationSetupCost,
       foundationWealth: deferredPurchase
         ? foundationCash
         : foundationCash + propertyValue - remainingLoan,
@@ -1300,6 +1309,7 @@ export function calculateProjection(input) {
     giftTaxAllowance,
     taxableGiftBase,
     annualRent,
+    foundationSetupCost,
     giftTax,
     effectiveGiftTaxRate: taxableGiftBase > 0 ? giftTax / taxableGiftBase : 0,
     realEstateTax,

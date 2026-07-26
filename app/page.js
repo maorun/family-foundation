@@ -17,7 +17,7 @@ import {
   ERBERSATZ_CHILD_ALLOWANCE,
   ERBERSATZ_CHILDREN,
   ERBERSATZ_CYCLE_YEARS,
-  ERBERSATZ_TAX_RATE,
+  ERBERSATZ_TAX_CLASS,
   FIELD_DEFINITIONS,
   RELATIONSHIP_OPTIONS,
   calculateProjection,
@@ -327,7 +327,7 @@ export default function Home() {
     {
       title: "Schenkungssteuer bei Gründung",
       value: formatCurrency(result.giftTax),
-      detail: `${selectedRelationship.shortLabel}: ${formatDecimalAsPercent(result.input.giftTaxRate)}, Freibetrag ${formatCurrency(result.giftTaxAllowance)}`,
+      detail: `${selectedRelationship.shortLabel}: effektiv ${formatDecimalAsPercent(result.effectiveGiftTaxRate)}, Freibetrag ${formatCurrency(result.giftTaxAllowance)}`,
     },
     {
       title: "Grunderwerbsteuer",
@@ -1206,7 +1206,7 @@ export default function Home() {
               ))}
             </div>
             <p className={styles.hint}>
-              Für die Erstausstattung gilt die günstigste Steuerklasse aus dem Kreis der Begünstigten; Schenkungssteuersatz und pauschaler Freibetrag werden daraus abgeleitet.
+              Für die Erstausstattung gilt die günstigste Steuerklasse aus dem Kreis der Begünstigten; der progressive Stufentarif (§ 19 ErbStG) und der pauschale Freibetrag werden daraus abgeleitet.
             </p>
           </fieldset>
           <div className={styles.checkboxRow}>
@@ -1584,8 +1584,8 @@ export default function Home() {
               : "Annahme: Die Tilgung erfolgt jährlich als konstanter Prozentsatz vom ursprünglichen Darlehensbetrag; die Zinsen fallen auf die jeweilige Restschuld an."}{" "}
             Die Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle
             30 Jahre auf Basis des Nettovermögens berechnet: 2 fiktive Kinder
-            (Freibetrag je {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, vereinfachter
-            Pauschalsatz {formatPercent(ERBERSATZ_TAX_RATE * 100)}). Die Zahlung
+            (Freibetrag je {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, progressiver
+            Stufentarif Steuerklasse {ERBERSATZ_TAX_CLASS} gem. § 19 ErbStG). Die Zahlung
             erfolgt in 30 gleichen Jahresraten an das Finanzamt (§ 24 ErbStG).
           </p>
         </section>
@@ -1828,7 +1828,7 @@ export default function Home() {
                               {formatCurrency(row.erbsTriggeredAmount)}
                             </dd>
                             <small className={styles.formula}>
-                              {ERBERSATZ_CHILDREN} × max(0, {formatCurrency((row.foundationCash + row.foundationEtfLiquidationValue + (row.propertyOwned ? result.propertyValue : 0) - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag) × {formatPercent(ERBERSATZ_TAX_RATE * 100)}
+                              {ERBERSATZ_CHILDREN} × Stufentarif § 19 ErbStG StKl. {ERBERSATZ_TAX_CLASS} auf max(0, {formatCurrency((row.foundationCash + row.foundationEtfLiquidationValue + (row.propertyOwned ? result.propertyValue : 0) - row.remainingLoan) / ERBERSATZ_CHILDREN)} − {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)} Freibetrag)
                               {row.erbsTriggeredAmount > 0
                                 ? ` — wird auf ${ERBERSATZ_CYCLE_YEARS} Jahresraten à ${formatCurrency(row.erbsTriggeredAmount / ERBERSATZ_CYCLE_YEARS)} verteilt`
                                 : " — kein steuerpflichtiger Betrag im aktuellen 30-Jahres-Zyklus"}
@@ -2156,8 +2156,8 @@ export default function Home() {
             vollständig auf die ETF-Vorabpauschale angerechnet. Die
             Erbersatzsteuer (§ 1 Abs. 1 Nr. 4 ErbStG) wird alle 30 Jahre auf
             Grundlage des Nettovermögens (2 fiktive Kinder, Freibetrag je{" "}
-            {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, Pauschalsatz{" "}
-            {formatPercent(ERBERSATZ_TAX_RATE * 100)}) berechnet und in 30 gleichen
+            {formatCurrency(ERBERSATZ_CHILD_ALLOWANCE)}, progressiver Stufentarif
+            Steuerklasse {ERBERSATZ_TAX_CLASS} gem. § 19 ErbStG) berechnet und in 30 gleichen
             Jahresraten (§ 24 ErbStG) beglichen; die Verbindlichkeit wird bis zur
             vollständigen Tilgung als Fremdkapital ausgewiesen.
           </p>

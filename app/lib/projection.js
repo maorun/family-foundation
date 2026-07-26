@@ -21,6 +21,14 @@ export const FIELD_DEFINITIONS = [
     defaultValue: 1500,
   },
   {
+    id: "inflationRate",
+    label: "Inflationsrate p.a. (%)",
+    min: 0,
+    max: 20,
+    step: "0.1",
+    defaultValue: 2,
+  },
+  {
     id: "loanAmount",
     label: "Darlehensbetrag (€)",
     min: 0,
@@ -419,6 +427,7 @@ export function validateFormValues(formValues, bulletLoan = false) {
       privateEtfPartialExemptionRate: PRIVATE_ETF_PARTIAL_EXEMPTION_RATE,
       saverAllowance: parsedValues.saverAllowance,
       projectionYears: parsedValues.projectionYears,
+      inflationRate: parsedValues.inflationRate / 100,
       selfUseKfwLoanAmount: parsedValues.selfUseKfwLoanAmount,
       selfUseKfwLoanInterestRate: parsedValues.selfUseKfwLoanInterestRate / 100,
       selfUseKfwLoanTermYears: parsedValues.selfUseKfwLoanTermYears,
@@ -846,6 +855,9 @@ export function calculateProjection(input) {
 
   for (let year = 1; year <= input.projectionYears; year += 1) {
     const yearPersonalTaxRate = getPersonalTaxRateForYear(input.personalTaxSteps, year);
+    const inflationFactor = Math.pow(1 + (input.inflationRate ?? 0), year - 1);
+    const yearlyRent = annualRent * inflationFactor;
+    const yearlyAdminCost = input.annualAdminCost * inflationFactor;
 
     // Deferred-purchase check: buy property if ETF + loan now covers the full acquisition cost
     let propertyBoughtThisYear = false;
@@ -967,16 +979,16 @@ export function calculateProjection(input) {
         effectiveDepreciableBase * input.depreciationRate,
       );
       taxableResult =
-        annualRent -
-        input.annualAdminCost -
+        yearlyRent -
+        yearlyAdminCost -
         annualInterest -
         annualDepreciation -
         maintenanceFullDeduction;
       // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
       // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
       foundationCashFlow =
-        annualRent -
-        input.annualAdminCost -
+        yearlyRent -
+        yearlyAdminCost -
         annualInterest -
         maintenanceCashOut;
       const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
@@ -1027,8 +1039,8 @@ export function calculateProjection(input) {
       annualInterest = 0;
       scheduledRepaymentTarget = 0;
       annualDepreciation = 0;
-      taxableResult = -input.annualAdminCost;
-      foundationCashFlow = -input.annualAdminCost;
+      taxableResult = -yearlyAdminCost;
+      foundationCashFlow = -yearlyAdminCost;
       foundationCash += foundationCashFlow;
     }
 
@@ -1092,9 +1104,9 @@ export function calculateProjection(input) {
       privateRemainingDepreciableBuilding,
       privateEffectiveDepreciableBase * input.depreciationRate,
     );
-    const privateTaxableRentalIncome = annualRent - privateDepreciation - privateMaintFullDeduction;
+    const privateTaxableRentalIncome = yearlyRent - privateDepreciation - privateMaintFullDeduction;
     const privateIncomeTax = privateTaxableRentalIncome * yearPersonalTaxRate;
-    privateCash += annualRent - privateIncomeTax;
+    privateCash += yearlyRent - privateIncomeTax;
     privateRemainingDepreciableBuilding = Math.max(
       0,
       privateRemainingDepreciableBuilding - privateDepreciation,
@@ -1321,8 +1333,8 @@ export function calculateProjection(input) {
       personVorabTax: personEtf.vorabTax,
       personEtfSaleTax: personEtf.saleTax,
       // GuV Stiftung
-      guvRent: foundationOwnsProperty ? annualRent : 0,
-      guvAdminCost: input.annualAdminCost,
+      guvRent: foundationOwnsProperty ? yearlyRent : 0,
+      guvAdminCost: yearlyAdminCost,
       guvInterest: annualInterest,
       guvDepreciation: annualDepreciation,
       guvResult: taxableResult,

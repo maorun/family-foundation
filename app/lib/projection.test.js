@@ -270,3 +270,75 @@ describe("selfUse KfW loan", () => {
     expect(result.rows[11].selfUseRemainingKfwLoan).toBe(0);
   });
 });
+
+describe("inflation rate", () => {
+  // Overrides that guarantee immediate property ownership (no deferred purchase):
+  // initialCash = 1 000 000 - 0 - 0 + 0 - 200 000 - 0 = 800 000 > 0
+  const immediateOwnershipOverrides = {
+    initialCapital: "1000000",
+    foundationSetupCost: "0",
+    loanAmount: "0",
+    buildingValue: "200000",
+    landValue: "0",
+    realEstateTaxRate: "0",
+  };
+
+  function buildInflationInput(inflationRatePct, overrides = {}) {
+    const values = {
+      ...DEFAULT_FORM_VALUES,
+      ...immediateOwnershipOverrides,
+      ...overrides,
+      inflationRate: String(inflationRatePct),
+    };
+    const validation = validateFormValues(getEffectiveFormValues(values, true), false);
+    const taxValidation = validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS);
+    if (!validation.input || !taxValidation.parsedSteps) {
+      throw new Error("inputs must be valid");
+    }
+    return createProjectionInput(
+      validation.input,
+      getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+      false,
+      taxValidation.parsedSteps,
+      false,
+    );
+  }
+
+  it("with inflationRate 0, year-1 guvRent equals base annualRent", () => {
+    const input = buildInflationInput(0, { monthlyRent: "1000" });
+    const result = calculateProjection(input);
+    expect(result.rows[1].guvRent).toBeCloseTo(12000, 2);
+  });
+
+  it("guvRent grows by inflation factor each year", () => {
+    const input = buildInflationInput(10, { monthlyRent: "1000" });
+    const result = calculateProjection(input);
+    // Year 1: factor = (1.10)^0 = 1 → rent = 12 000
+    expect(result.rows[1].guvRent).toBeCloseTo(12000, 2);
+    // Year 2: factor = (1.10)^1 = 1.10 → rent = 13 200
+    expect(result.rows[2].guvRent).toBeCloseTo(13200, 2);
+    // Year 3: factor = (1.10)^2 = 1.21 → rent = 14 520
+    expect(result.rows[3].guvRent).toBeCloseTo(14520, 2);
+  });
+
+  it("guvAdminCost grows by inflation factor each year", () => {
+    const input = buildInflationInput(10, { annualAdminCost: "1000" });
+    const result = calculateProjection(input);
+    // Year 1: factor = 1 → cost = 1 000
+    expect(result.rows[1].guvAdminCost).toBeCloseTo(1000, 2);
+    // Year 2: factor = 1.10 → cost = 1 100
+    expect(result.rows[2].guvAdminCost).toBeCloseTo(1100, 2);
+  });
+
+  it("inflation increases foundationWealth over no-inflation baseline when rent exceeds admin cost", () => {
+    // monthly rent 1 000 → annual rent 12 000, admin cost 1 500 → net positive, so inflation helps
+    const baseInput = buildInflationInput(0, { monthlyRent: "1000", annualAdminCost: "1500" });
+    const inflatedInput = buildInflationInput(2, { monthlyRent: "1000", annualAdminCost: "1500" });
+    const baseResult = calculateProjection(baseInput);
+    const inflatedResult = calculateProjection(inflatedInput);
+    const lastYear = inflatedResult.rows.length - 1;
+    expect(inflatedResult.rows[lastYear].foundationWealth).toBeGreaterThan(
+      baseResult.rows[lastYear].foundationWealth,
+    );
+  });
+});

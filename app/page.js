@@ -57,6 +57,8 @@ const FIELD_HELP_TEXT_BY_ID = {
     "Jährlicher steuerfreier Freibetrag auf Kapitalerträge der Privatperson.",
   etfBasisInterestRate:
     "Gesetzlicher Basiszins zur Berechnung der ETF-Vorabpauschale (Basisertrag = ETF-Wert × 70 % × Basiszins).",
+  inflationRate:
+    "Jährliche Anpassungsrate für Mieteinnahmen und Verwaltungskosten (0 = keine Anpassung, 2 = 2 % p.a. Anstieg ab Jahr 2).",
 };
 
 function normalizeConfig(rawConfig = {}) {
@@ -450,7 +452,7 @@ export default function Home() {
       value: formatCurrency(result.annualRent),
       detail: result.deferredPurchase && result.purchaseYear === null
         ? "Immobilie nicht erworben im Betrachtungszeitraum – keine Mieteinnahmen"
-        : `${formatCurrency(result.input.monthlyRent)} pro Monat${result.deferredPurchase && result.purchaseYear !== null ? ` (ab Jahr ${result.purchaseYear})` : ""}`,
+        : `${formatCurrency(result.input.monthlyRent)} pro Monat${result.deferredPurchase && result.purchaseYear !== null ? ` (ab Jahr ${result.purchaseYear})` : ""}${result.input.inflationRate > 0 ? `, jährliche Steigerung ${formatDecimalAsPercent(result.input.inflationRate)}` : ""}`,
       realEstateOnly: true,
     },
     {

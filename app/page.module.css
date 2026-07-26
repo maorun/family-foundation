@@ -213,6 +213,11 @@
   font-weight: 700;
 }
 
+.neutral {
+  color: #334155;
+  font-weight: 700;
+}
+
 .tableSubtitle {
   margin: 20px 0 8px;
   font-size: 1.1rem;

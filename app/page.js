@@ -497,27 +497,34 @@ export default function Home() {
   ].filter((card) => (!card.realEstateOnly || includeRealEstate) && (!card.loanOnly || result.input.loanAmount > 0));
 
   const sensitivityScenarios = useMemo(() => {
-    const baseOutcomeDelta = calculateOutcomeDelta(result, compareType, includeRealEstate);
+    const { input, rows } = result;
+    if (rows.length === 0) return [];
+
+    const lastBaseRow = rows[rows.length - 1];
+    const baseOutcomeDelta =
+      lastBaseRow.foundationWealth +
+      lastBaseRow.personAssetPosition -
+      getActiveCompareWealth(lastBaseRow, compareType, includeRealEstate);
     const variants = [
       {
         id: "etf-return-minus",
         title: "ETF-Rendite −1 Prozentpunkt",
         updatedInput: {
-          etfReturnRate: Math.max(0, result.input.etfReturnRate - 0.01),
+          etfReturnRate: Math.max(0, input.etfReturnRate - 0.01),
         },
       },
       {
         id: "etf-return-plus",
         title: "ETF-Rendite +1 Prozentpunkt",
         updatedInput: {
-          etfReturnRate: result.input.etfReturnRate + 0.01,
+          etfReturnRate: input.etfReturnRate + 0.01,
         },
       },
       {
         id: "rent-minus",
         title: "Mieteinnahmen −10 %",
         updatedInput: {
-          monthlyRent: Math.max(0, result.input.monthlyRent * 0.9),
+          monthlyRent: Math.max(0, input.monthlyRent * 0.9),
         },
         realEstateOnly: true,
       },
@@ -525,7 +532,7 @@ export default function Home() {
         id: "rent-plus",
         title: "Mieteinnahmen +10 %",
         updatedInput: {
-          monthlyRent: result.input.monthlyRent * 1.1,
+          monthlyRent: input.monthlyRent * 1.1,
         },
         realEstateOnly: true,
       },
@@ -535,7 +542,7 @@ export default function Home() {
       .filter((variant) => !variant.realEstateOnly || includeRealEstate)
       .map((variant) => {
         const variantResult = calculateProjection({
-          ...result.input,
+          ...input,
           ...variant.updatedInput,
         });
         const variantOutcomeDelta = calculateOutcomeDelta(
@@ -1791,15 +1798,20 @@ export default function Home() {
             {sensitivityScenarios.map((scenario) => (
               <article key={scenario.id} className={styles.card}>
                 <h3 className={styles.cardTitle}>{scenario.title}</h3>
-                <div className={styles.value}>{formatSignedCurrency(scenario.impact)}</div>
+                <div className={styles.value}>{formatCurrency(scenario.outcomeDelta)}</div>
                 <div>
-                  Veränderung ggü. Basis:{" "}
-                  <strong className={scenario.impact < 0 ? styles.negative : styles.positive}>
+                  Veränderung gegenüber Basis:{" "}
+                  <strong
+                    className={
+                      scenario.impact === 0
+                        ? styles.neutral
+                        : scenario.impact < 0
+                          ? styles.negative
+                          : styles.positive
+                    }
+                  >
                     {formatSignedCurrency(scenario.impact)}
                   </strong>
-                </div>
-                <div>
-                  Neues Ergebnis: <strong>{formatCurrency(scenario.outcomeDelta)}</strong>
                 </div>
               </article>
             ))}

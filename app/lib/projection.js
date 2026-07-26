@@ -1210,8 +1210,7 @@ export function calculateProjection(input) {
 
     selfUseCash -= selfUseMaintCashOut;
 
-    // Selbstnutzung: gesparte Miete fließt als impliziter steuerfreier Cashflow zu
-    selfUseCash += annualRent;
+    // Selbstnutzung: kein Mietvorteil – fairer Vergleich ohne Miete/gesparte Miete
     const selfUseEtf = applyEtfYear({
       cash: selfUseCash,
       etfBalance: selfUseEtfBalance,

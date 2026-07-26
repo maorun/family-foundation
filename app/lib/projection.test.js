@@ -86,6 +86,7 @@ describe("applyEtfYear", () => {
       etfContributions: 0,
       etfTaxedGains: 0,
       returnRate: 0.05,
+      basisInterestRate: 0.025,
       taxRate: 0.25,
       partialExemptionRate: 0.3,
       saverAllowance: 0,
@@ -95,6 +96,38 @@ describe("applyEtfYear", () => {
     expect(result.etfBalanceAfterTax).toBeGreaterThan(10000);
     expect(result.vorabTax).toBeGreaterThanOrEqual(0);
     expect(result.etfLiquidationValue).toBeGreaterThan(0);
+  });
+
+  it("caps taxable Vorabpauschale at statutory base yield", () => {
+    const result = applyEtfYear({
+      cash: 10000,
+      etfBalance: 0,
+      etfContributions: 0,
+      etfTaxedGains: 0,
+      returnRate: 0.05,
+      basisInterestRate: 0.02,
+      taxRate: 0.25,
+      partialExemptionRate: 0.3,
+      saverAllowance: 0,
+    });
+
+    expect(result.vorabTax).toBeCloseTo(24.5, 2);
+  });
+
+  it("keeps Vorabpauschale capped by actual value increase", () => {
+    const result = applyEtfYear({
+      cash: 10000,
+      etfBalance: 0,
+      etfContributions: 0,
+      etfTaxedGains: 0,
+      returnRate: 0.01,
+      basisInterestRate: 0.05,
+      taxRate: 0.25,
+      partialExemptionRate: 0.3,
+      saverAllowance: 0,
+    });
+
+    expect(result.vorabTax).toBeCloseTo(17.5, 2);
   });
 });
 

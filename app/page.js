@@ -53,6 +53,8 @@ const FIELD_HELP_TEXT_BY_ID = {
   realEstateTaxRate: "Grunderwerbsteuer-Satz auf den Immobilienkaufpreis.",
   saverAllowance:
     "Jährlicher steuerfreier Freibetrag auf Kapitalerträge der Privatperson.",
+  etfBasisInterestRate:
+    "Gesetzlicher Basiszins zur Berechnung der ETF-Vorabpauschale (Basisertrag = ETF-Wert × 70 % × Basiszins).",
 };
 
 function normalizeConfig(rawConfig = {}) {
@@ -2203,7 +2205,10 @@ export default function Home() {
             Liquidität wird jährlich in ETF-Anteile umgeschichtet (Rendite:
             {" "}
             {formatPercent(result.input.etfReturnRate * 100)}). Die Vorabpauschale
-            wird für ETF-Erträge jährlich mit getrennten Sätzen angesetzt
+            wird jährlich auf den niedrigeren Wert aus Brutto-ETF-Rendite und
+            Basisertrag (ETF-Wert × 70 % × Basiszins{" "}
+            {formatPercent(result.input.etfBasisInterestRate * 100)}) angesetzt
+            und mit getrennten Sätzen besteuert
             (Stiftung: {formatPercent(result.input.foundationEtfTaxRate * 100)},
             Privat/Vergleich: {formatPercent(result.input.privateEtfTaxRate * 100)}).
             Für die ETF-Steuerbasis gilt eine Teilfreistellung (Stiftung:

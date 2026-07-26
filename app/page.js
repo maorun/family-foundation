@@ -156,6 +156,21 @@ function getActiveCompareWealth(row, compareType, includeRealEstate) {
   return row.compareWealth; // 'rental' (default)
 }
 
+function calculateOutcomeDelta(projectionResult, compareType, includeRealEstate) {
+  const lastRow = projectionResult.rows[projectionResult.rows.length - 1];
+  if (!lastRow) return 0;
+  return (
+    lastRow.foundationWealth +
+    lastRow.personAssetPosition -
+    getActiveCompareWealth(lastRow, compareType, includeRealEstate)
+  );
+}
+
+function formatSignedCurrency(value) {
+  if (value > 0) return `+${formatCurrency(value)}`;
+  return formatCurrency(value);
+}
+
 export default function Home() {
   const [
     {
@@ -480,6 +495,70 @@ export default function Home() {
             : `Ohne Stiftung, ohne Darlehen, ohne Verwaltungskosten, Mieteinnahmen zu ${formatPercent(lastYear.personalTaxRate * 100)} versteuert${compareTaxCardDetail}, Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)}, positive Liquidität in ETF (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)})`,
     },
   ].filter((card) => (!card.realEstateOnly || includeRealEstate) && (!card.loanOnly || result.input.loanAmount > 0));
+
+  const sensitivityScenarios = useMemo(() => {
+    const { input, rows } = result;
+    if (rows.length === 0) return [];
+
+    const lastBaseRow = rows[rows.length - 1];
+    const baseOutcomeDelta =
+      lastBaseRow.foundationWealth +
+      lastBaseRow.personAssetPosition -
+      getActiveCompareWealth(lastBaseRow, compareType, includeRealEstate);
+    const variants = [
+      {
+        id: "etf-return-minus",
+        title: "ETF-Rendite −1 Prozentpunkt",
+        updatedInput: {
+          etfReturnRate: Math.max(0, input.etfReturnRate - 0.01),
+        },
+      },
+      {
+        id: "etf-return-plus",
+        title: "ETF-Rendite +1 Prozentpunkt",
+        updatedInput: {
+          etfReturnRate: input.etfReturnRate + 0.01,
+        },
+      },
+      {
+        id: "rent-minus",
+        title: "Mieteinnahmen −10 %",
+        updatedInput: {
+          monthlyRent: Math.max(0, input.monthlyRent * 0.9),
+        },
+        realEstateOnly: true,
+      },
+      {
+        id: "rent-plus",
+        title: "Mieteinnahmen +10 %",
+        updatedInput: {
+          monthlyRent: input.monthlyRent * 1.1,
+        },
+        realEstateOnly: true,
+      },
+    ];
+
+    return variants
+      .filter((variant) => !variant.realEstateOnly || includeRealEstate)
+      .map((variant) => {
+        const variantResult = calculateProjection({
+          ...input,
+          ...variant.updatedInput,
+        });
+        const variantOutcomeDelta = calculateOutcomeDelta(
+          variantResult,
+          compareType,
+          includeRealEstate,
+        );
+        const impact = variantOutcomeDelta - baseOutcomeDelta;
+        return {
+          id: variant.id,
+          title: variant.title,
+          outcomeDelta: variantOutcomeDelta,
+          impact,
+        };
+      });
+  }, [result, compareType, includeRealEstate]);
 
   const wealthChart = useMemo(() => {
     if (result.rows.length === 0) {
@@ -1705,6 +1784,35 @@ export default function Home() {
                 <h3 className={styles.cardTitle}>{card.title}</h3>
                 <div className={styles.value}>{card.value}</div>
                 <div>{card.detail}</div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className={styles.panel}>
+          <h2>Sensitivitätsanalyse</h2>
+          <p className={styles.hint}>
+            Ergebnis = Vermögensvorteil (Stiftung + Person) gegenüber dem Vergleich im Jahr {result.input.projectionYears}.
+          </p>
+          <div className={styles.cards}>
+            {sensitivityScenarios.map((scenario) => (
+              <article key={scenario.id} className={styles.card}>
+                <h3 className={styles.cardTitle}>{scenario.title}</h3>
+                <div className={styles.value}>{formatCurrency(scenario.outcomeDelta)}</div>
+                <div>
+                  Veränderung gegenüber Basis:{" "}
+                  <strong
+                    className={
+                      scenario.impact === 0
+                        ? styles.neutral
+                        : scenario.impact < 0
+                          ? styles.negative
+                          : styles.positive
+                    }
+                  >
+                    {formatSignedCurrency(scenario.impact)}
+                  </strong>
+                </div>
               </article>
             ))}
           </div>

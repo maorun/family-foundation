@@ -123,4 +123,45 @@ describe("calculateProjection", () => {
     expect(result.rows[0].year).toBe(0);
     expect(result.rows.at(-1)?.year).toBe(input.projectionYears);
   });
+
+  it("deducts one-time foundation setup costs at year 0", () => {
+    const baseValues = {
+      ...DEFAULT_FORM_VALUES,
+      foundationSetupCost: "0",
+    };
+    const withCostValues = {
+      ...DEFAULT_FORM_VALUES,
+      foundationSetupCost: "12000",
+    };
+
+    const baseValidation = validateFormValues(getEffectiveFormValues(baseValues, false), false);
+    const withCostValidation = validateFormValues(getEffectiveFormValues(withCostValues, false), false);
+    const taxValidation = validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS);
+    if (!baseValidation.input || !withCostValidation.input || !taxValidation.parsedSteps) {
+      throw new Error("inputs must be valid");
+    }
+
+    const baseResult = calculateProjection(
+      createProjectionInput(
+        baseValidation.input,
+        getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+        false,
+        taxValidation.parsedSteps,
+        false,
+      ),
+    );
+    const withCostResult = calculateProjection(
+      createProjectionInput(
+        withCostValidation.input,
+        getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+        false,
+        taxValidation.parsedSteps,
+        false,
+      ),
+    );
+
+    expect(withCostResult.foundationSetupCost).toBe(12000);
+    expect(withCostResult.initialCash).toBeCloseTo(baseResult.initialCash - 12000, 2);
+    expect(withCostResult.rows[0].taxableResult).toBeCloseTo(baseResult.rows[0].taxableResult - 12000, 2);
+  });
 });

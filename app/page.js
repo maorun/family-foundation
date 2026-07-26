@@ -44,6 +44,8 @@ const STORAGE_KEY_V1 = "familienstiftung-rechner-v1";
 const STORAGE_KEY_V2 = "familienstiftung-rechner-v2";
 const STORAGE_VERSION = 2;
 const FIELD_HELP_TEXT_BY_ID = {
+  foundationSetupCost:
+    "Einmalige Kosten für die Stiftungsgründung, z. B. Notar, Behörden und erforderliche Kapitalbindung.",
   foundationEtfTaxRate:
     "Steuersatz auf die steuerpflichtigen ETF-Erträge der Stiftung.",
   privateEtfTaxRate:
@@ -358,6 +360,11 @@ export default function Home() {
       title: "Schenkungssteuer bei Gründung",
       value: formatCurrency(result.giftTax),
       detail: `${selectedRelationship.shortLabel}: effektiv ${formatDecimalAsPercent(result.effectiveGiftTaxRate)}, Freibetrag ${formatCurrency(result.giftTaxAllowance)}`,
+    },
+    {
+      title: "Gründungskosten (einmalig)",
+      value: formatCurrency(result.foundationSetupCost),
+      detail: "Notar, Behörden und Kapitalbindung gemäß Gründungsanforderungen",
     },
     {
       title: "Grunderwerbsteuer",
@@ -1281,13 +1288,25 @@ export default function Home() {
                 !(f.id === "loanRepaymentRate" && bulletLoan) &&
                 !(f.conditionalField === "bulletLoan" && !bulletLoan),
             );
+            const foundingFieldIds = new Set(["initialCapital", "foundationSetupCost"]);
+            const foundingFields = nonRealEstateFields.filter((f) => foundingFieldIds.has(f.id));
+            const planningFields = nonRealEstateFields.filter((f) => !foundingFieldIds.has(f.id));
 
             const realEstateFields = FIELD_DEFINITIONS.filter((f) => f.realEstate);
 
             return (
               <>
-                <div className={styles.grid}>
-                  {nonRealEstateFields.map(renderField)}
+                <div className={styles.inputSection}>
+                  <h3 className={styles.inputSectionTitle}>Gründung</h3>
+                  <div className={styles.grid}>
+                    {foundingFields.map(renderField)}
+                  </div>
+                </div>
+                <div className={styles.inputSection}>
+                  <h3 className={styles.inputSectionTitle}>Laufende Parameter</h3>
+                  <div className={styles.grid}>
+                    {planningFields.map(renderField)}
+                  </div>
                 </div>
                 {includeRealEstate && (
                   <div className={styles.realEstateFields}>
@@ -1850,9 +1869,9 @@ export default function Home() {
                               <dt>Startliquidität</dt>
                               <dd>{formatCurrency(row.foundationCash)}</dd>
                               {result.deferredPurchase ? (
-                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) — Immobilienkauf zurückgestellt</small>
+                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) — Immobilienkauf zurückgestellt</small>
                               ) : (
-                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                                <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                               )}
                             </>
                           )}
@@ -2134,9 +2153,9 @@ export default function Home() {
                       <dd>{formatCurrency(row.foundationCash)}</dd>
                       {row.year === 0 ? (
                         result.deferredPurchase ? (
-                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) — kein Ankauf, ETF-Investition ab Jahr 1</small>
+                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) — kein Ankauf, ETF-Investition ab Jahr 1</small>
                         ) : (
-                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
+                          <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer) − {formatCurrency(result.foundationSetupCost)} (Gründungskosten) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                         )
                       ) : row.propertyBoughtThisYear ? (
                         <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""}{row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>

@@ -593,7 +593,7 @@ export default function Home() {
       xTicks,
       breakEven,
     };
-  }, [result.rows, result.input.loanAmount, includeRealEstate, compareType]);
+  }, [result.rows, result.input.loanAmount, includeRealEstate, compareType, compareScenarioLabel]);
 
   function handleFieldChange(fieldId, value) {
     setState((currentState) => {
@@ -1555,7 +1555,7 @@ export default function Home() {
                     className={styles.checkbox}
                   />
                   <label htmlFor="comparePaysRealEstateTax" className={styles.checkboxLabel}>
-                    Vergleichsperson zahlt Grunderwerbsteuer
+                    Vergleichsvermögen zahlt Grunderwerbsteuer
                   </label>
                 </div>
               )}

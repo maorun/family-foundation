@@ -135,6 +135,13 @@ function ServiceWorkerRegistration() {
   return null;
 }
 
+function getActiveCompareWealth(row, compareType, includeRealEstate) {
+  if (!includeRealEstate) return row.compareWealth;
+  if (compareType === "etfOnly") return row.etfOnlyWealth;
+  if (compareType === "selfUse") return row.selfUseWealth;
+  return row.compareWealth; // 'rental' (default)
+}
+
 export default function Home() {
   const [
     {
@@ -321,14 +328,6 @@ export default function Home() {
   const firstYear = result.rows[1] ?? result.rows[0];
   const lastYear = result.rows[result.rows.length - 1];
 
-  // Hilfsfunktion: liefert das Vergleichsvermögen einer Zeile je nach gewähltem Vergleichstyp
-  function getActiveCompareWealth(row) {
-    if (!includeRealEstate) return row.compareWealth;
-    if (compareType === "etfOnly") return row.etfOnlyWealth;
-    if (compareType === "selfUse") return row.selfUseWealth;
-    return row.compareWealth; // 'rental' (default)
-  }
-
   const compareScenarioLabel = !includeRealEstate
     ? "Privates ETF-Investment"
     : compareType === "etfOnly"
@@ -446,7 +445,7 @@ export default function Home() {
     },
     {
       title: `Vergleichsvermögen Jahr ${result.input.projectionYears} (${compareScenarioLabel})`,
-      value: formatCurrency(getActiveCompareWealth(lastYear)),
+      value: formatCurrency(getActiveCompareWealth(lastYear, compareType, includeRealEstate)),
       detail: !includeRealEstate
         ? `Ohne Stiftung, Kapital direkt in ETF investiert (${formatPercent(result.input.etfReturnRate * 100)}; ETF-Steuer ${formatPercent(result.input.privateEtfTaxRate * 100)}; Teilfreistellung ${formatPercent(result.input.privateEtfPartialExemptionRate * 100)}; Sparerpauschbetrag ${formatCurrency(result.input.saverAllowance)})`
         : compareType === "etfOnly"
@@ -526,7 +525,7 @@ export default function Home() {
         color: "#ea580c",
         values: result.rows.map((row) => ({
           year: row.year,
-          value: getActiveCompareWealth(row),
+          value: getActiveCompareWealth(row, compareType, includeRealEstate),
         })),
       },
     ];
@@ -574,7 +573,7 @@ export default function Home() {
       );
 
     const breakEvenIndex = result.rows.findIndex(
-      (row, index) => index >= 1 && row.foundationWealth + row.personAssetPosition >= getActiveCompareWealth(row),
+      (row, index) => index >= 1 && row.foundationWealth + row.personAssetPosition >= getActiveCompareWealth(row, compareType, includeRealEstate),
     );
     const breakEven =
       breakEvenIndex >= 0
@@ -594,7 +593,7 @@ export default function Home() {
       xTicks,
       breakEven,
     };
-  }, [result.rows, result.input.loanAmount, includeRealEstate, compareScenarioLabel, compareType]);
+  }, [result.rows, result.input.loanAmount, includeRealEstate, compareType]);
 
   function handleFieldChange(fieldId, value) {
     setState((currentState) => {
@@ -1172,7 +1171,7 @@ export default function Home() {
   const wealthDiff =
     lastYear.foundationWealth +
     (result.input.loanAmount > 0 ? lastYear.personAssetPosition : 0) -
-    getActiveCompareWealth(lastYear);
+    getActiveCompareWealth(lastYear, compareType, includeRealEstate);
 
   return (
     <>
@@ -1963,7 +1962,7 @@ export default function Home() {
                       <dl className={styles.dataGrid}>
                         <div className={styles.dataItem}>
                           <dt>Vergleichsvermögen</dt>
-                          <dd>{formatCurrency(getActiveCompareWealth(row))}</dd>
+                          <dd>{formatCurrency(getActiveCompareWealth(row, compareType, includeRealEstate))}</dd>
                           {compareType === "etfOnly" && (
                             <small className={styles.formula}>ETF (nach Verkaufsteuer) — gleiches Startkapital ({formatCurrency(result.input.initialCapital)}), keine Immobilie, kein Darlehen, kein Verwaltungsaufwand</small>
                           )}

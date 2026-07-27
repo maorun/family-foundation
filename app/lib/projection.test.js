@@ -288,6 +288,107 @@ describe("calculateProjection – Destinatärszahlungen", () => {
   });
 });
 
+describe("bullet loan – income tax deferral", () => {
+  // Overrides ensuring immediate property ownership (initialCash >= 0):
+  // initialCash = 500 000 - 0 - 0 + 300 000 - 200 000 - 0 = 600 000 > 0
+  const baseOverrides = {
+    initialCapital: "500000",
+    foundationSetupCost: "0",
+    loanAmount: "300000",
+    buildingValue: "200000",
+    landValue: "0",
+    realEstateTaxRate: "0",
+    loanInterestRate: "5",   // 5 % p.a. → 15 000 € interest per year on 300 000 €
+    loanTermYears: "3",
+    projectionYears: "5",
+    saverAllowance: "0",     // disable saver allowance for simpler tax arithmetic
+  };
+
+  function buildBulletInput(overrides = {}) {
+    const values = { ...DEFAULT_FORM_VALUES, ...baseOverrides, ...overrides };
+    const validation = validateFormValues(getEffectiveFormValues(values, true), true);
+    const taxValidation = validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS);
+    if (!validation.input || !taxValidation.parsedSteps) {
+      throw new Error("inputs must be valid");
+    }
+    return createProjectionInput(
+      validation.input,
+      getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+      false,
+      taxValidation.parsedSteps,
+      false,
+      true,  // bulletLoan
+    );
+  }
+
+  it("no income tax on interest during the loan term (years 1 to T-1)", () => {
+    const input = buildBulletInput();
+    const result = calculateProjection(input);
+
+    // Years 1 and 2 are within the term (loanTermYears = 3); no tax should be charged.
+    expect(result.rows[1].personGuvTax).toBe(0);
+    expect(result.rows[2].personGuvTax).toBe(0);
+  });
+
+  it("lender receives full gross interest in non-repayment years", () => {
+    // loanAmount = 300 000, rate = 5 % → annualInterest = 15 000
+    const input = buildBulletInput();
+    const result = calculateProjection(input);
+
+    expect(result.rows[1].personGuvInterest).toBeCloseTo(15000, 2);
+    // personGuvResult = interest - tax = 15 000 - 0 = 15 000
+    expect(result.rows[1].personGuvResult).toBeCloseTo(15000, 2);
+  });
+
+  it("all accumulated interest tax is paid in the repayment year", () => {
+    // 3 years × 15 000 € × 42 % (DEFAULT_PERSONAL_TAX_STEPS rate) = 18 900 €
+    const input = buildBulletInput();
+    const result = calculateProjection(input);
+    const repaymentRow = result.rows[3]; // year === loanTermYears
+
+    expect(repaymentRow.personGuvTax).toBeCloseTo(18900, 2);
+  });
+
+  it("total net interest over the term equals gross minus total tax (same as annual taxation)", () => {
+    // Non-bullet: tax paid each year. Bullet: same total, different timing.
+    // Compare against a non-bullet loan with 0 % repayment so the outstanding balance is identical.
+    const bulletInput = buildBulletInput({ loanRepaymentRate: "0" });
+
+    const annualValues = { ...DEFAULT_FORM_VALUES, ...baseOverrides, loanRepaymentRate: "0" };
+    const annualValidation = validateFormValues(getEffectiveFormValues(annualValues, true), false);
+    const taxValidation = validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS);
+    if (!annualValidation.input || !taxValidation.parsedSteps) {
+      throw new Error("inputs must be valid");
+    }
+    const annualInput = createProjectionInput(
+      annualValidation.input,
+      getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+      false,
+      taxValidation.parsedSteps,
+      false,
+      false, // NOT a bullet loan
+    );
+
+    const bulletResult = calculateProjection(bulletInput);
+    const annualResult = calculateProjection(annualInput);
+
+    // Cumulative tax at the repayment year (year 3) must equal what annual taxation would have charged.
+    expect(bulletResult.rows[3].personCumulativeInterestTax).toBeCloseTo(
+      annualResult.rows[3].personCumulativeInterestTax,
+      2,
+    );
+  });
+
+  it("no tax in any year after the loan is fully repaid", () => {
+    const input = buildBulletInput({ projectionYears: "5" });
+    const result = calculateProjection(input);
+
+    // Years 4 and 5 have no remaining loan → no interest, no tax
+    expect(result.rows[4].personGuvTax).toBe(0);
+    expect(result.rows[5].personGuvTax).toBe(0);
+  });
+});
+
 describe("selfUse KfW loan", () => {
   function buildInput(overrides = {}) {
     const values = { ...DEFAULT_FORM_VALUES, ...overrides };

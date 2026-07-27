@@ -229,6 +229,33 @@ export default function Home() {
     result: DEFAULT_RESULT,
   });
 
+  // Local state for the property value slider UI
+  const [propertyTotalStr, setPropertyTotalStr] = useState(() => {
+    const bv = parseFloat(DEFAULT_FORM_VALUES.buildingValue) || 0;
+    const lv = parseFloat(DEFAULT_FORM_VALUES.landValue) || 0;
+    return String(bv + lv);
+  });
+  const [buildingRatio, setBuildingRatio] = useState(() => {
+    const bv = parseFloat(DEFAULT_FORM_VALUES.buildingValue) || 0;
+    const lv = parseFloat(DEFAULT_FORM_VALUES.landValue) || 0;
+    const total = bv + lv;
+    return total > 0 ? Math.round((bv / total) * 100) : 50;
+  });
+
+  // Sync slider UI state when formValues change externally (e.g. scenario loading)
+  useEffect(() => {
+    const bv = parseFloat(formValues.buildingValue) || 0;
+    const lv = parseFloat(formValues.landValue) || 0;
+    const total = bv + lv;
+    const ratio = total > 0 ? Math.round((bv / total) * 100) : 50;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPropertyTotalStr((prev) => {
+      const prevTotal = parseFloat(prev) || 0;
+      return Math.abs(prevTotal - total) > 0.5 ? String(total) : prev;
+    });
+    setBuildingRatio((prev) => (prev !== ratio ? ratio : prev));
+  }, [formValues.buildingValue, formValues.landValue]);
+
   // Load saved values from localStorage on first mount
   useEffect(() => {
     try {
@@ -727,6 +754,40 @@ export default function Home() {
       const nextFormValues = {
         ...currentState.formValues,
         [fieldId]: value,
+      };
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+
+      return {
+        ...currentState,
+        formValues: nextFormValues,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
+                currentState.founderPaysSetupCost,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
+  function handleRealEstateValuesChange(buildingVal, landVal) {
+    setState((currentState) => {
+      const nextFormValues = {
+        ...currentState.formValues,
+        buildingValue: buildingVal,
+        landValue: landVal,
       };
       const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
@@ -1539,7 +1600,70 @@ export default function Home() {
                         ))}
                       </select>
                     </div>
-                    {realEstateFields.map(renderField)}
+                    {/* Gesamter Immobilienwert + Slider */}
+                    <div className={styles.propertyValueSection}>
+                      <h3 className={styles.inputSectionTitle}>Immobilienwert</h3>
+                      <div>
+                        <label htmlFor="propertyTotal" className={styles.fieldLabel}>
+                          Gesamter Immobilienwert (€)
+                        </label>
+                        <input
+                          id="propertyTotal"
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={propertyTotalStr}
+                          onChange={(event) => {
+                            const val = event.target.value;
+                            setPropertyTotalStr(val);
+                            const total = parseFloat(val) || 0;
+                            const building = Math.round((total * buildingRatio) / 100);
+                            const land = total - building;
+                            handleRealEstateValuesChange(String(building), String(land));
+                          }}
+                          className={styles.fieldInput}
+                        />
+                      </div>
+                      <div className={styles.propertySliderSection}>
+                        <div className={styles.propertySliderValues}>
+                          <span>
+                            <strong>Gebäudewert:</strong>{" "}
+                            {formatCurrency(Math.round(((parseFloat(propertyTotalStr) || 0) * buildingRatio) / 100))}
+                          </span>
+                          <span>
+                            <strong>Grundstückswert:</strong>{" "}
+                            {formatCurrency(Math.round(((parseFloat(propertyTotalStr) || 0) * (100 - buildingRatio)) / 100))}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          id="buildingRatioSlider"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={buildingRatio}
+                          onChange={(event) => {
+                            const ratio = Number(event.target.value);
+                            setBuildingRatio(ratio);
+                            const total = parseFloat(propertyTotalStr) || 0;
+                            const building = Math.round((total * ratio) / 100);
+                            const land = total - building;
+                            handleRealEstateValuesChange(String(building), String(land));
+                          }}
+                          className={styles.propertySlider}
+                        />
+                        <div className={styles.propertySliderEndLabels}>
+                          <span>0 % Gebäude</span>
+                          <span>100 % Gebäude</span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Remaining real estate fields (without buildingValue and landValue) */}
+                    <div className={styles.grid}>
+                      {realEstateFields
+                        .filter((f) => f.id !== "buildingValue" && f.id !== "landValue")
+                        .map(renderField)}
+                    </div>
                   </div>
                 )}
                 {includeDistributions && (

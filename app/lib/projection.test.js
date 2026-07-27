@@ -352,7 +352,7 @@ describe("bullet loan – income tax deferral", () => {
   it("total net interest over the term equals gross minus total tax (same as annual taxation)", () => {
     // Non-bullet: tax paid each year. Bullet: same total, different timing.
     // Compare against a non-bullet loan with 0 % repayment so the outstanding balance is identical.
-    const bulletInput = buildBulletInput({ loanRepaymentRate: "0" });
+    const bulletInput = buildBulletInput();
 
     const annualValues = { ...DEFAULT_FORM_VALUES, ...baseOverrides, loanRepaymentRate: "0" };
     const annualValidation = validateFormValues(getEffectiveFormValues(annualValues, true), false);

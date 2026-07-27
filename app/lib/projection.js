@@ -1265,6 +1265,8 @@ export function calculateProjection(input) {
     // Vorabpauschale-Einkünfte verrechnet (§ 10d EStG i.V.m. § 8 KStG).
     // Schätzung auf Basis des aktuellen ETF-Bestands vor Jahresrendite (stimmt exakt bei
     // typischen Renditen über dem Basisertrag, da dann der Basisertrag die Obergrenze ist).
+    // In Randfällen (Rendite < Basisertrag) kann die Schätzung den tatsächlichen Wert
+    // leicht übersteigen; der tatsächlich genutzte Anteil wird nach applyEtfYear korrigiert.
     const foundationEtfVorabBase = foundationEtfBalance;
     const foundationVorabTaxableGainEst = Math.max(
       0,

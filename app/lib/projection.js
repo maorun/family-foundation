@@ -21,6 +21,14 @@ export const FIELD_DEFINITIONS = [
     defaultValue: 1500,
   },
   {
+    id: "inflationRate",
+    label: "Inflationsrate p.a. (%)",
+    min: 0,
+    max: 20,
+    step: "0.1",
+    defaultValue: 2,
+  },
+  {
     id: "loanAmount",
     label: "Darlehensbetrag (€)",
     min: 0,
@@ -172,6 +180,32 @@ export const FIELD_DEFINITIONS = [
     step: "100",
     defaultValue: 1000,
     distribution: true,
+  },
+  {
+    id: "selfUseKfwLoanAmount",
+    label: "KfW-Darlehensbetrag (€)",
+    min: 0,
+    step: "1000",
+    defaultValue: 0,
+    selfUse: true,
+  },
+  {
+    id: "selfUseKfwLoanInterestRate",
+    label: "KfW-Zinssatz p.a. (%)",
+    min: 0,
+    step: "0.01",
+    defaultValue: 0.01,
+    selfUse: true,
+  },
+  {
+    id: "selfUseKfwLoanTermYears",
+    label: "KfW-Laufzeit (Jahre)",
+    min: 1,
+    max: 50,
+    step: "1",
+    integer: true,
+    defaultValue: 10,
+    selfUse: true,
   },
 ];
 
@@ -445,6 +479,10 @@ export function validateFormValues(formValues, bulletLoan = false) {
       destinatarCount: parsedValues.destinatarCount,
       destinatarTaxRate: parsedValues.destinatarTaxRate / 100,
       destinatarSaverAllowance: parsedValues.destinatarSaverAllowance,
+      inflationRate: parsedValues.inflationRate / 100,
+      selfUseKfwLoanAmount: parsedValues.selfUseKfwLoanAmount,
+      selfUseKfwLoanInterestRate: parsedValues.selfUseKfwLoanInterestRate / 100,
+      selfUseKfwLoanTermYears: parsedValues.selfUseKfwLoanTermYears,
     },
   };
 }
@@ -540,6 +578,7 @@ export function createProjectionInput(
   tenantRentFromExternalFunds = false,
   maintenanceEvents = [],
   bulletLoanReinvest = false,
+  founderPaysSetupCost = false,
 ) {
   return {
     ...validatedInput,
@@ -553,6 +592,7 @@ export function createProjectionInput(
     tenantRentFromExternalFunds,
     maintenanceEvents,
     bulletLoanReinvest,
+    founderPaysSetupCost,
   };
 }
 
@@ -685,6 +725,10 @@ export function calculateProjection(input) {
   const propertyValue = input.buildingValue + input.landValue;
   const annualRent = input.monthlyRent * 12;
   const foundationSetupCost = Math.max(0, input.foundationSetupCost ?? 0);
+  const founderPaysSetupCost = input.founderPaysSetupCost ?? false;
+  // When the founder/lender pays the setup costs out of their own pocket, the
+  // foundation does not bear them – only the person's initial cash is reduced.
+  const foundationEffectiveSetupCost = founderPaysSetupCost ? 0 : foundationSetupCost;
   const giftTaxAllowance = Math.max(0, input.giftTaxAllowance ?? 0);
   const taxableGiftBase = Math.max(0, input.initialCapital - giftTaxAllowance);
   const giftTax = calculateGiftTaxByBrackets(taxableGiftBase, input.giftTaxClass);
@@ -705,7 +749,7 @@ export function calculateProjection(input) {
     (input.comparePaysRealEstateTax ? realEstateTaxBuildingPortion : 0);
 
   const initialCash =
-    input.initialCapital - giftTax - foundationSetupCost + input.loanAmount - propertyValue - realEstateTax;
+    input.initialCapital - giftTax - foundationEffectiveSetupCost + input.loanAmount - propertyValue - realEstateTax;
 
   // Deferred purchase: if there is not enough money even with the loan, invest in ETF first
   // and buy the property once the ETF has grown enough to cover property + transfer tax
@@ -715,7 +759,7 @@ export function calculateProjection(input) {
   let purchaseYear = deferredPurchase ? null : 0;
 
   // In deferred mode: start with equity only (no loan taken, no property bought yet)
-  let foundationCash = deferredPurchase ? input.initialCapital - giftTax - foundationSetupCost : initialCash;
+  let foundationCash = deferredPurchase ? input.initialCapital - giftTax - foundationEffectiveSetupCost : initialCash;
   let foundationEtfBalance = 0;
   let foundationEtfContributions = 0;
   let foundationEtfTaxedGains = 0;
@@ -723,7 +767,10 @@ export function calculateProjection(input) {
   let remainingDepreciableBuildingValue = deferredPurchase ? 0 : depreciableBuildingBase;
   // Tracks the total depreciable base including AfA-qualifying maintenance additions
   let effectiveDepreciableBase = deferredPurchase ? 0 : depreciableBuildingBase;
-  let personCash = 0;
+  // When the founder pays setup costs, their initial cash is reduced by that amount.
+  // A negative starting balance represents money the founder spent at founding time and
+  // is gradually recovered through interest payments received from the foundation.
+  let personCash = founderPaysSetupCost ? -foundationSetupCost : 0;
   let personEtfBalance = 0;
   let personEtfContributions = 0;
   let personEtfTaxedGains = 0;
@@ -761,12 +808,18 @@ export function calculateProjection(input) {
 
   // Vergleichsszenario: Selbstnutzung – Person kauft Immobilie selbst und nutzt sie
   // Kein Darlehen an Stiftung, keine AfA (da Eigennutzung), keine Mieteinnahmen.
-  // Jährlicher Vorteil: gesparte Miete (= annualRent) als impliziter steuerfreier Cashflow.
+  // Optional: KfW-Förderkredit zu sehr günstigen Konditionen; der nicht in die Immobilie
+  // geflossene Betrag wird in ETFs investiert, jährliche Tilgung und Zinsen werden abgezogen.
+  // Fallback-Werte für den Fall, dass input-Felder fehlen: Betrag 0 → kein Kredit, Zins 0 → keine Zinslast.
+  const selfUseKfwLoanAmount = input.selfUseKfwLoanAmount ?? 0;
+  const selfUseKfwLoanInterestRate = input.selfUseKfwLoanInterestRate ?? 0;
+  const selfUseKfwLoanTermYears = input.selfUseKfwLoanTermYears ?? 10;
   let selfUseCash =
-    input.initialCapital + input.loanAmount - propertyValue - privateRealEstateTax;
+    input.initialCapital + input.loanAmount - propertyValue - privateRealEstateTax + selfUseKfwLoanAmount;
   let selfUseEtfBalance = 0;
   let selfUseEtfContributions = 0;
   let selfUseEtfTaxedGains = 0;
+  let selfUseRemainingKfwLoan = selfUseKfwLoanAmount;
 
   const buildingBookValue0 = deferredPurchase ? 0 : depreciableBuildingBase + landBookBase;
 
@@ -781,13 +834,13 @@ export function calculateProjection(input) {
       foundationEtfDeficitSaleGross: 0,
       foundationEtfDeficitSaleTax: 0,
       foundationEtfDeficitSaleNet: 0,
-      taxableResult: -giftTax - foundationSetupCost,
+      taxableResult: -giftTax - foundationEffectiveSetupCost,
       foundationWealth: deferredPurchase
         ? foundationCash
         : foundationCash + propertyValue - remainingLoan,
       remainingLoan,
       personNetCashFlow: 0,
-      personAssetPosition: deferredPurchase ? 0 : remainingLoan,
+      personAssetPosition: deferredPurchase ? personCash : remainingLoan + personCash,
       personCash,
       personEtfBalance,
       personEtfLiquidationValue: 0,
@@ -817,11 +870,18 @@ export function calculateProjection(input) {
       etfOnlyVorabTax: 0,
       etfOnlyEtfSaleTax: 0,
       // Vergleichsvermögen Selbstnutzung Jahr 0
-      selfUseWealth: selfUseCash + propertyValue,
+      selfUseWealth: selfUseCash + propertyValue - selfUseRemainingKfwLoan,
       selfUseEtfBalance,
       selfUseEtfLiquidationValue: 0,
       selfUseVorabTax: 0,
       selfUseEtfSaleTax: 0,
+      selfUseMaintCashOut: 0,
+      selfUseMaintEtfSaleGross: 0,
+      selfUseMaintEtfSaleTax: 0,
+      selfUseMaintEtfSaleNet: 0,
+      selfUseRemainingKfwLoan,
+      selfUseKfwInterest: 0,
+      selfUseKfwRepayment: 0,
       propertyOwned: !deferredPurchase,
       propertyBoughtThisYear: false,
       etfSaleForPurchase: 0,
@@ -854,6 +914,9 @@ export function calculateProjection(input) {
 
   for (let year = 1; year <= input.projectionYears; year += 1) {
     const yearPersonalTaxRate = getPersonalTaxRateForYear(input.personalTaxSteps, year);
+    const inflationFactor = Math.pow(1 + input.inflationRate, year - 1);
+    const yearlyRent = annualRent * inflationFactor;
+    const yearlyAdminCost = input.annualAdminCost * inflationFactor;
 
     // Deferred-purchase check: buy property if ETF + loan now covers the full acquisition cost
     let propertyBoughtThisYear = false;
@@ -975,16 +1038,16 @@ export function calculateProjection(input) {
         effectiveDepreciableBase * input.depreciationRate,
       );
       taxableResult =
-        annualRent -
-        input.annualAdminCost -
+        yearlyRent -
+        yearlyAdminCost -
         annualInterest -
         annualDepreciation -
         maintenanceFullDeduction;
       // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
       // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
       foundationCashFlow =
-        annualRent -
-        input.annualAdminCost -
+        yearlyRent -
+        yearlyAdminCost -
         annualInterest -
         maintenanceCashOut;
       const availableCashBeforeRepayment = foundationCash + foundationCashFlow;
@@ -1035,8 +1098,8 @@ export function calculateProjection(input) {
       annualInterest = 0;
       scheduledRepaymentTarget = 0;
       annualDepreciation = 0;
-      taxableResult = -input.annualAdminCost;
-      foundationCashFlow = -input.annualAdminCost;
+      taxableResult = -yearlyAdminCost;
+      foundationCashFlow = -yearlyAdminCost;
       foundationCash += foundationCashFlow;
     }
 
@@ -1100,9 +1163,9 @@ export function calculateProjection(input) {
       privateRemainingDepreciableBuilding,
       privateEffectiveDepreciableBase * input.depreciationRate,
     );
-    const privateTaxableRentalIncome = annualRent - privateDepreciation - privateMaintFullDeduction;
+    const privateTaxableRentalIncome = yearlyRent - privateDepreciation - privateMaintFullDeduction;
     const privateIncomeTax = privateTaxableRentalIncome * yearPersonalTaxRate;
-    privateCash += annualRent - privateIncomeTax;
+    privateCash += yearlyRent - privateIncomeTax;
     privateRemainingDepreciableBuilding = Math.max(
       0,
       privateRemainingDepreciableBuilding - privateDepreciation,
@@ -1275,8 +1338,53 @@ export function calculateProjection(input) {
     etfOnlyEtfContributions = etfOnlyEtf.etfContributionsAfterInvestment;
     etfOnlyEtfTaxedGains = etfOnlyEtf.etfTaxedGainsAfterYear;
 
-    // Selbstnutzung: gesparte Miete fließt als impliziter steuerfreier Cashflow zu
-    selfUseCash += annualRent;
+    // Selbstnutzung: Instandhaltungsereignisse (kein Steuerabzug, da Eigennutzung)
+    let selfUseMaintCashOut = 0;
+    let selfUseMaintEtfSaleGross = 0;
+    let selfUseMaintEtfSaleTax = 0;
+    let selfUseMaintEtfSaleNet = 0;
+
+    for (const evt of (input.maintenanceEvents ?? []).filter((e) => e.year === year)) {
+      selfUseMaintCashOut += evt.amount;
+    }
+
+    // Selbstnutzung: jährliche KfW-Tilgung und -Zinsen
+    let selfUseKfwInterest = 0;
+    let selfUseKfwRepayment = 0;
+    if (selfUseRemainingKfwLoan > 0) {
+      selfUseKfwInterest = selfUseRemainingKfwLoan * selfUseKfwLoanInterestRate;
+      const scheduledKfwRepayment =
+        selfUseKfwLoanTermYears > 0
+          ? selfUseKfwLoanAmount / selfUseKfwLoanTermYears
+          : selfUseRemainingKfwLoan;
+      selfUseKfwRepayment = Math.min(scheduledKfwRepayment, selfUseRemainingKfwLoan);
+      selfUseCash -= selfUseKfwInterest + selfUseKfwRepayment;
+      selfUseRemainingKfwLoan = Math.max(0, selfUseRemainingKfwLoan - selfUseKfwRepayment);
+    }
+
+    // Instandhaltung aus ETF finanzieren, wenn Kasse nicht ausreicht
+    if (selfUseMaintCashOut > 0 && selfUseMaintCashOut > selfUseCash && selfUseEtfBalance > 0) {
+      const selfUseMaintShortfall = selfUseMaintCashOut - selfUseCash;
+      const selfUseMaintSale = computePartialEtfSale(
+        selfUseMaintShortfall,
+        selfUseEtfBalance,
+        selfUseEtfContributions,
+        selfUseEtfTaxedGains,
+        input.privateEtfTaxRate,
+        input.privateEtfPartialExemptionRate,
+      );
+      selfUseMaintEtfSaleGross = selfUseMaintSale.grossSale;
+      selfUseMaintEtfSaleTax = selfUseMaintSale.saleTax;
+      selfUseMaintEtfSaleNet = selfUseMaintSale.netProceeds;
+      selfUseCash += selfUseMaintSale.netProceeds;
+      selfUseEtfBalance -= selfUseMaintSale.grossSale;
+      selfUseEtfContributions *= 1 - selfUseMaintSale.fraction;
+      selfUseEtfTaxedGains *= 1 - selfUseMaintSale.fraction;
+    }
+
+    selfUseCash -= selfUseMaintCashOut;
+
+    // Selbstnutzung: kein Mietvorteil – fairer Vergleich ohne Miete/gesparte Miete
     const selfUseEtf = applyEtfYear({
       cash: selfUseCash,
       etfBalance: selfUseEtfBalance,
@@ -1326,8 +1434,8 @@ export function calculateProjection(input) {
       personVorabTax: personEtf.vorabTax,
       personEtfSaleTax: personEtf.saleTax,
       // GuV Stiftung
-      guvRent: foundationOwnsProperty ? annualRent : 0,
-      guvAdminCost: input.annualAdminCost,
+      guvRent: foundationOwnsProperty ? yearlyRent : 0,
+      guvAdminCost: yearlyAdminCost,
       guvInterest: annualInterest,
       guvDepreciation: annualDepreciation,
       guvResult: taxableResult,
@@ -1389,11 +1497,18 @@ export function calculateProjection(input) {
       etfOnlyVorabTax: etfOnlyEtf.vorabTax,
       etfOnlyEtfSaleTax: etfOnlyEtf.saleTax,
       // Vergleichsvermögen Selbstnutzung (Eigennutzung ohne AfA, gesparte Miete)
-      selfUseWealth: selfUseCash + selfUseEtf.etfLiquidationValue + propertyValue,
+      selfUseWealth: selfUseCash + selfUseEtf.etfLiquidationValue + propertyValue - selfUseRemainingKfwLoan,
       selfUseEtfBalance,
       selfUseEtfLiquidationValue: selfUseEtf.etfLiquidationValue,
       selfUseVorabTax: selfUseEtf.vorabTax,
       selfUseEtfSaleTax: selfUseEtf.saleTax,
+      selfUseMaintCashOut,
+      selfUseMaintEtfSaleGross,
+      selfUseMaintEtfSaleTax,
+      selfUseMaintEtfSaleNet,
+      selfUseRemainingKfwLoan,
+      selfUseKfwInterest,
+      selfUseKfwRepayment,
       // Deferred-purchase fields
       propertyOwned: foundationOwnsProperty,
       propertyBoughtThisYear,
@@ -1446,5 +1561,7 @@ export const DEFAULT_RESULT = calculateProjection({
     false,
     false,
     [],
+    false,
+    false,
   ),
 });

@@ -14,6 +14,7 @@ import {
   DEFAULT_PERSONAL_TAX_STEPS,
   DEFAULT_RELATIONSHIP_ID,
   DEFAULT_RESULT,
+  DISTRIBUTION_FIELD_IDS,
   ERBERSATZ_CHILD_ALLOWANCE,
   ERBERSATZ_CHILDREN,
   ERBERSATZ_CYCLE_YEARS,
@@ -78,6 +79,7 @@ function normalizeConfig(rawConfig = {}) {
     personalTaxSteps,
     selectedOverviewYear: rawConfig.selectedOverviewYear ?? "all",
     includeRealEstate: rawConfig.includeRealEstate ?? false,
+    includeDistributions: rawConfig.includeDistributions ?? false,
     compareType: rawConfig.compareType ?? "rental",
     bulletLoan: rawConfig.bulletLoan ?? false,
     bulletLoanShowReturn: rawConfig.bulletLoanShowReturn ?? false,
@@ -92,7 +94,7 @@ function normalizeConfig(rawConfig = {}) {
 function calculateResultFromConfig(config) {
   const normalized = normalizeConfig(config);
   const validation = validateFormValues(
-    getEffectiveFormValues(normalized.formValues, normalized.includeRealEstate),
+    getEffectiveFormValues(normalized.formValues, normalized.includeRealEstate, normalized.includeDistributions),
     normalized.bulletLoan,
   );
   const taxValidation = validatePersonalTaxSteps(normalized.personalTaxSteps);
@@ -126,6 +128,7 @@ function toScenarioConfig(state) {
     personalTaxSteps: state.personalTaxSteps,
     selectedOverviewYear: state.selectedOverviewYear,
     includeRealEstate: state.includeRealEstate,
+    includeDistributions: state.includeDistributions,
     compareType: state.compareType,
     bulletLoan: state.bulletLoan,
     bulletLoanShowReturn: state.bulletLoanShowReturn,
@@ -187,6 +190,7 @@ export default function Home() {
       personalTaxSteps,
       selectedOverviewYear,
       includeRealEstate,
+      includeDistributions,
       compareType,
       bulletLoan,
       bulletLoanShowReturn,
@@ -210,6 +214,7 @@ export default function Home() {
     personalTaxSteps: DEFAULT_PERSONAL_TAX_STEPS,
     selectedOverviewYear: "all",
     includeRealEstate: false,
+    includeDistributions: false,
     compareType: "rental",
     bulletLoan: false,
     bulletLoanShowReturn: false,
@@ -291,6 +296,7 @@ export default function Home() {
               personalTaxSteps,
               selectedOverviewYear,
               includeRealEstate,
+              includeDistributions,
               compareType,
               bulletLoan,
               bulletLoanShowReturn,
@@ -317,6 +323,7 @@ export default function Home() {
     personalTaxSteps,
     selectedOverviewYear,
     includeRealEstate,
+    includeDistributions,
     compareType,
     bulletLoan,
     bulletLoanShowReturn,
@@ -329,8 +336,8 @@ export default function Home() {
   ]);
 
   const validation = useMemo(
-    () => validateFormValues(getEffectiveFormValues(formValues, includeRealEstate), bulletLoan),
-    [formValues, includeRealEstate, bulletLoan],
+    () => validateFormValues(getEffectiveFormValues(formValues, includeRealEstate, includeDistributions), bulletLoan),
+    [formValues, includeRealEstate, includeDistributions, bulletLoan],
   );
   const taxStepsValidation = useMemo(() => validatePersonalTaxSteps(personalTaxSteps), [personalTaxSteps]);
   const maintenanceValidation = useMemo(() => validateMaintenanceEvents(maintenanceEvents), [maintenanceEvents]);
@@ -721,7 +728,7 @@ export default function Home() {
         ...currentState.formValues,
         [fieldId]: value,
       };
-      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
 
       return {
@@ -750,7 +757,7 @@ export default function Home() {
 
   function handleRelationshipChange(nextRelationshipId) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       const nextRelationship = getRelationshipOption(nextRelationshipId);
       return {
@@ -779,7 +786,7 @@ export default function Home() {
 
   function handleSurplusToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -807,7 +814,7 @@ export default function Home() {
 
   function handleCompareRealEstateTaxToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -835,7 +842,7 @@ export default function Home() {
 
   function handleIncludeRealEstateToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, checked), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, checked, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -868,13 +875,43 @@ export default function Home() {
     }));
   }
 
+  function handleIncludeDistributionsToggle(checked) {
+    setState((currentState) => {
+      const nextValidation = validateFormValues(
+        getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, checked),
+        currentState.bulletLoan,
+      );
+      const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
+      return {
+        ...currentState,
+        includeDistributions: checked,
+        result: nextValidation.input && nextTaxValidation.parsedSteps
+          ? calculateProjection(
+              createProjectionInput(
+                nextValidation.input,
+                getRelationshipOption(currentState.relationshipId),
+                currentState.surplusToRepayment,
+                nextTaxValidation.parsedSteps,
+                currentState.includeRealEstate ? currentState.comparePaysRealEstateTax : false,
+                currentState.bulletLoan,
+                currentState.lenderIsTenant,
+                currentState.tenantRentFromExternalFunds,
+                validateMaintenanceEvents(currentState.maintenanceEvents).parsedEvents,
+                currentState.bulletLoanReinvest,
+              ),
+            )
+          : currentState.result,
+      };
+    });
+  }
+
   function handleBundeslandChange(name) {
     const bl = BUNDESLAENDER.find((b) => b.name === name) ?? null;
     setState((currentState) => {
       const nextFormValues = bl
         ? { ...currentState.formValues, realEstateTaxRate: String(bl.rate) }
         : currentState.formValues;
-      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(nextFormValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -906,7 +943,7 @@ export default function Home() {
       const nextSteps = currentState.personalTaxSteps.map((step, i) =>
         i === index ? { ...step, [field]: value } : step,
       );
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -938,7 +975,7 @@ export default function Home() {
       const lastFromYear = parseNumber(String(lastStep?.fromYear ?? "0")) ?? 0;
       const newStep = { fromYear: String(lastFromYear + 1), rate: lastStep?.rate ?? "42" };
       const nextSteps = [...currentState.personalTaxSteps, newStep];
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -968,7 +1005,7 @@ export default function Home() {
     setState((currentState) => {
       if (currentState.personalTaxSteps.length <= 1) return currentState;
       const nextSteps = currentState.personalTaxSteps.filter((_, i) => i !== index);
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(nextSteps);
       return {
         ...currentState,
@@ -996,7 +1033,7 @@ export default function Home() {
 
   function handleBulletLoanToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), checked);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), checked);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1034,7 +1071,7 @@ export default function Home() {
 
   function handleBulletLoanReinvestToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1062,7 +1099,7 @@ export default function Home() {
 
   function handleLenderTenantToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       const nextTenantRentFromExternalFunds = checked
         ? currentState.tenantRentFromExternalFunds
@@ -1094,7 +1131,7 @@ export default function Home() {
 
   function handleTenantRentFromExternalFundsToggle(checked) {
     setState((currentState) => {
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1154,7 +1191,7 @@ export default function Home() {
         ...currentState.maintenanceEvents,
         { year: "1", amount: "5000", type: "full" },
       ];
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1183,7 +1220,7 @@ export default function Home() {
   function handleRemoveMaintenanceEvent(index) {
     setState((currentState) => {
       const nextEvents = currentState.maintenanceEvents.filter((_, i) => i !== index);
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1214,7 +1251,7 @@ export default function Home() {
       const nextEvents = currentState.maintenanceEvents.map((evt, i) =>
         i === index ? { ...evt, [field]: value } : evt,
       );
-      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate), currentState.bulletLoan);
+      const nextValidation = validateFormValues(getEffectiveFormValues(currentState.formValues, currentState.includeRealEstate, currentState.includeDistributions), currentState.bulletLoan);
       const nextTaxValidation = validatePersonalTaxSteps(currentState.personalTaxSteps);
       return {
         ...currentState,
@@ -1401,6 +1438,18 @@ export default function Home() {
               Immobilie in die Rechnung einbeziehen
             </label>
           </div>
+          <div className={styles.checkboxRow}>
+            <input
+              id="includeDistributions"
+              type="checkbox"
+              checked={includeDistributions}
+              onChange={(event) => handleIncludeDistributionsToggle(event.target.checked)}
+              className={styles.checkbox}
+            />
+            <label htmlFor="includeDistributions" className={styles.checkboxLabel}>
+              Destinatärszahlungen einbeziehen (jährliche Ausschüttungen an Begünstigte, § 20 Abs. 1 Nr. 9 EStG)
+            </label>
+          </div>
           {(() => {
             const renderField = (field) => {
               const isInvalid = validation.invalidIds.includes(field.id);
@@ -1432,6 +1481,7 @@ export default function Home() {
             const nonRealEstateFields = FIELD_DEFINITIONS.filter(
               (f) =>
                 !f.realEstate &&
+                !f.distribution &&
                 !f.selfUse &&
                 !(f.id === "loanRepaymentRate" && bulletLoan) &&
                 !(f.conditionalField === "bulletLoan" && !bulletLoan),
@@ -1441,6 +1491,7 @@ export default function Home() {
             const planningFields = nonRealEstateFields.filter((f) => !foundingFieldIds.has(f.id));
 
             const realEstateFields = FIELD_DEFINITIONS.filter((f) => f.realEstate);
+            const distributionFields = FIELD_DEFINITIONS.filter((f) => f.distribution);
 
             return (
               <>
@@ -1491,11 +1542,19 @@ export default function Home() {
                     {realEstateFields.map(renderField)}
                   </div>
                 )}
+                {includeDistributions && (
+                  <div className={styles.inputSection}>
+                    <h3 className={styles.inputSectionTitle}>Destinatärszahlungen</h3>
+                    <div className={styles.grid}>
+                      {distributionFields.map(renderField)}
+                    </div>
+                  </div>
+                )}
               </>
             );
           })()}
           <div className={styles.taxStepsSection}>
-            <span className={styles.fieldLabel}>Persönlicher Steuersatz der Person (%)</span>
+            <span className={styles.fieldLabel}>Persönlicher Steuersatz des Darlehensgebers (%)</span>
             <p className={styles.hint}>
               Für jede Periode den Startzeitraum (ab welchem Jahr) und den zugehörigen Steuersatz eingeben.
               Die zuletzt passende Periode gilt für alle nachfolgenden Jahre.
@@ -2165,6 +2224,16 @@ export default function Home() {
                             </small>
                           </div>
                         )}
+                        {row.year > 0 && row.distributionGross > 0 && (
+                          <div className={styles.dataItem}>
+                            <dt>Destinatärszahlungen (Ausschüttung)</dt>
+                            <dd className={styles.negative}>− {formatCurrency(row.distributionGross)}</dd>
+                            <small className={styles.formula}>
+                              Brutto {formatCurrency(row.distributionGross)} — Steuer Destinatäre {formatCurrency(row.distributionTax)} — Netto {formatCurrency(row.distributionNet)}
+                              {row.distributionEtfSaleGross > 0 ? `; ETF-Verkauf ${formatCurrency(row.distributionEtfSaleGross)} (Steuer ${formatCurrency(row.distributionEtfSaleTax)}, Netto ${formatCurrency(row.distributionEtfSaleNet)})` : ""}
+                            </small>
+                          </div>
+                        )}
                       </dl>
                     </div>
                     <div className={styles.guvColumn}>
@@ -2406,9 +2475,9 @@ export default function Home() {
                           <small className={styles.formula}>{formatCurrency(result.input.initialCapital)} (Stiftungskapital) − {formatCurrency(result.giftTax)} (Schenkungssteuer){setupCostFormulaFragment} + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue)} (Kaufpreis) − {formatCurrency(result.realEstateTax)} (GrESt)</small>
                         )
                       ) : row.propertyBoughtThisYear ? (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""}{row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (vor Kauf){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""}{row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} + {formatCurrency(row.etfSaleNetForPurchase)} (ETF-Erlös) + {formatCurrency(result.input.loanAmount)} (Darlehen) − {formatCurrency(result.propertyValue + result.realEstateTax)} (Kaufpreis + GrESt) + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}{row.distributionGross > 0 ? ` − ${formatCurrency(row.distributionGross)} (Destinatärszahlung)` : ""}</small>
                       ) : (
-                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""} + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen){row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}</small>
+                        <small className={styles.formula}>{formatCurrency(row.prevFoundationCash)} (Vorjahr){row.guvMaintenanceEtfSaleNet > 0 ? ` + ${formatCurrency(row.guvMaintenanceEtfSaleNet)} (ETF-Verkauf Instandhaltungsfinanzierung)` : ""} + {formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen){row.guvMaintenanceCashOut > 0 ? ` − ${formatCurrency(row.guvMaintenanceCashOut)} (Instandhaltung)` : ""} [= {formatCurrency(row.foundationCashFlow)} Überschuss] − {formatCurrency(row.scheduledRepayment + row.extraRepayment)} (Tilgung{row.extraRepayment > 0 ? ` inkl. ${formatCurrency(row.extraRepayment)} Sondertilgung` : ""}){row.foundationEtfDeficitSaleNet > 0 ? ` + ${formatCurrency(row.foundationEtfDeficitSaleNet)} (ETF-Teilverkauf bei Liquiditätsbedarf)` : ""} − {formatCurrency(row.foundationEtfInvestment)} (ETF-Investition){row.erbsInstallmentPaid > 0 ? ` − ${formatCurrency(row.erbsInstallmentPaid)} (Erbersatzsteuer-Rate)` : ""}{row.distributionGross > 0 ? ` − ${formatCurrency(row.distributionGross)} (Destinatärszahlung)` : ""}</small>
                       )}
                     </div>
                     <div className={styles.dataItem}>
@@ -2495,6 +2564,17 @@ export default function Home() {
             Steuerklasse {ERBERSATZ_TAX_CLASS} gem. § 19 ErbStG) berechnet und in 30 gleichen
             Jahresraten (§ 24 ErbStG) beglichen; die Verbindlichkeit wird bis zur
             vollständigen Tilgung als Fremdkapital ausgewiesen.
+            {result.input.annualDistribution > 0 && (
+              <>
+                {" "}Destinatärszahlungen (§ 20 Abs. 1 Nr. 9 EStG): jährlich{" "}
+                {formatCurrency(result.input.annualDistribution)} Brutto-Ausschüttung an{" "}
+                {result.input.destinatarCount} Begünstigte; Steuersatz{" "}
+                {formatPercent(result.input.destinatarTaxRate * 100)}, Sparerpauschbetrag je{" "}
+                {formatCurrency(result.input.destinatarSaverAllowance)}. Die Ausschüttung
+                mindert die Stiftungsliquidität nach KSt; bei Bedarf erfolgt ein anteiliger
+                ETF-Verkauf zur Finanzierung.
+              </>
+            )}
           </p>
         </section>
       </main>

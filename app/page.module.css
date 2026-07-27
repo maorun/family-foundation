@@ -75,6 +75,41 @@
   margin-top: 16px;
 }
 
+.propertyValueSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.propertySliderSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.propertySliderValues {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.propertySlider {
+  width: 100%;
+  cursor: pointer;
+  accent-color: #0f4c81;
+  height: 6px;
+}
+
+.propertySliderEndLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
 .inputSection {
   margin-bottom: 16px;
 }

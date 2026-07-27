@@ -2111,15 +2111,24 @@ export default function Home() {
           </div>
           <div className={styles.yearList}>
             {visibleOverviewRows.map((row) => {
-              const foundationEtfBalanceForVorabBase =
-                row.foundationEtfBalance - row.foundationGrossEtfReturn + row.foundationVorabTax;
               const foundationVorabTaxableBase = Math.max(
                 0,
                 Math.min(
                   row.foundationGrossEtfReturn,
-                  foundationEtfBalanceForVorabBase * result.input.etfBasisInterestRate * 0.7,
+                  row.foundationEtfVorabBase * result.input.etfBasisInterestRate * 0.7,
                 ) * (1 - result.input.foundationEtfPartialExemptionRate),
               );
+              // Privat: ETF-Bestand zu Jahresbeginn (vor Neuanlage) aus Zieldaten ableiten
+              const personEtfVorabBase =
+                row.personEtfBalance -
+                row.personEtfInvestment -
+                row.personGrossEtfReturn +
+                row.personVorabTax;
+              const personInterestAllowanceUsed = Math.min(
+                row.personGuvInterest || 0,
+                result.input.saverAllowance,
+              );
+              const personEtfSaverAllowance = result.input.saverAllowance - personInterestAllowanceUsed;
               const compareVorabTaxByType =
                 compareType === "etfOnly"
                   ? row.etfOnlyVorabTax
@@ -2390,7 +2399,7 @@ export default function Home() {
                                 <dt>ETF-Vorabpauschale</dt>
                                 <dd className={styles.negative}>− {formatCurrency(row.foundationVorabTax)}</dd>
                                 <small className={styles.formula}>
-                                  max(0, min({formatCurrency(row.foundationGrossEtfReturn)} Brutto-Rendite, {formatCurrency(foundationEtfBalanceForVorabBase)} ETF-Bestand × 70 % × {formatPercent(result.input.etfBasisInterestRate * 100)} Basiszins) × (1 − {formatPercent(result.input.foundationEtfPartialExemptionRate * 100)} Teilfreistellung)) = {formatCurrency(foundationVorabTaxableBase)} steuerpflichtig; × {formatPercent(result.input.foundationEtfTaxRate * 100)} Steuersatz
+                                  max(0, min({formatCurrency(row.foundationGrossEtfReturn)} Brutto-Rendite, {formatCurrency(row.foundationEtfVorabBase)} ETF-Bestand × 70 % × {formatPercent(result.input.etfBasisInterestRate * 100)} Basiszins) × (1 − {formatPercent(result.input.foundationEtfPartialExemptionRate * 100)} Teilfreistellung)) = {formatCurrency(foundationVorabTaxableBase)} steuerpflichtig; × {formatPercent(result.input.foundationEtfTaxRate * 100)} Steuersatz{row.foundationVorabTaxCredit > 0 ? `; − ${formatCurrency(row.foundationVorabTaxCredit)} Verlustvortrag` : ""}
                                 </small>
                               </div>
                               <div className={styles.dataItem}>
@@ -2444,7 +2453,7 @@ export default function Home() {
                                 <dt>ETF-Vorabpauschale</dt>
                                 <dd className={styles.negative}>− {formatCurrency(row.personVorabTax)}</dd>
                                 <small className={styles.formula}>
-                                  Vorabpauschale mit {formatPercent(result.input.privateEtfPartialExemptionRate * 100)} Teilfreistellung und {formatPercent(result.input.privateEtfTaxRate * 100)} Steuersatz
+                                  max(0, min({formatCurrency(row.personGrossEtfReturn)} Brutto-Rendite, {formatCurrency(personEtfVorabBase)} ETF-Bestand × 70 % × {formatPercent(result.input.etfBasisInterestRate * 100)} Basiszins) × (1 − {formatPercent(result.input.privateEtfPartialExemptionRate * 100)} Teilfreistellung){personEtfSaverAllowance > 0 ? ` − ${formatCurrency(personEtfSaverAllowance)} Sparerpauschbetrag` : ""}) × {formatPercent(result.input.privateEtfTaxRate * 100)} Steuersatz
                                 </small>
                               </div>
                             </>

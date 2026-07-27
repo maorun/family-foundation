@@ -94,15 +94,19 @@ describe("applyEtfYear", () => {
 
     expect(result.cashAfterInvestment).toBe(0);
     expect(result.etfBalanceAfterTax).toBeGreaterThan(10000);
-    expect(result.vorabTax).toBeGreaterThanOrEqual(0);
+    // No Vorabpauschale when etfBalance at start of year is 0 (all cash is new investment)
+    expect(result.vorabTax).toBe(0);
     expect(result.etfLiquidationValue).toBeGreaterThan(0);
   });
 
   it("caps taxable Vorabpauschale at statutory base yield", () => {
+    // etfBalance = 10000 (start of year), cash = 0 (no new investment)
+    // baseYield = 10000 × 0.02 × 0.7 = 140; grossReturn = 10000 × 0.05 = 500
+    // taxableVorab = min(500, 140) × (1 - 0.3) = 98; vorabTax = 98 × 0.25 = 24.5
     const result = applyEtfYear({
-      cash: 10000,
-      etfBalance: 0,
-      etfContributions: 0,
+      cash: 0,
+      etfBalance: 10000,
+      etfContributions: 10000,
       etfTaxedGains: 0,
       returnRate: 0.05,
       basisInterestRate: 0.02,
@@ -112,13 +116,17 @@ describe("applyEtfYear", () => {
     });
 
     expect(result.vorabTax).toBeCloseTo(24.5, 2);
+    expect(result.vorabTaxableGain).toBeCloseTo(98, 2);
   });
 
   it("keeps Vorabpauschale capped by actual value increase", () => {
+    // etfBalance = 10000 (start of year), cash = 0 (no new investment)
+    // baseYield = 10000 × 0.05 × 0.7 = 350; grossReturn = 10000 × 0.01 = 100
+    // taxableVorab = min(100, 350) × (1 - 0.3) = 70; vorabTax = 70 × 0.25 = 17.5
     const result = applyEtfYear({
-      cash: 10000,
-      etfBalance: 0,
-      etfContributions: 0,
+      cash: 0,
+      etfBalance: 10000,
+      etfContributions: 10000,
       etfTaxedGains: 0,
       returnRate: 0.01,
       basisInterestRate: 0.05,
@@ -128,6 +136,7 @@ describe("applyEtfYear", () => {
     });
 
     expect(result.vorabTax).toBeCloseTo(17.5, 2);
+    expect(result.vorabTaxableGain).toBeCloseTo(70, 2);
   });
 });
 

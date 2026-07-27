@@ -1402,7 +1402,7 @@ export default function Home() {
             );
           })()}
           <div className={styles.taxStepsSection}>
-            <span className={styles.fieldLabel}>Persönlicher Steuersatz der Person (%)</span>
+            <span className={styles.fieldLabel}>Persönlicher Steuersatz des Darlehensgebers (%)</span>
             <p className={styles.hint}>
               Für jede Periode den Startzeitraum (ab welchem Jahr) und den zugehörigen Steuersatz eingeben.
               Die zuletzt passende Periode gilt für alle nachfolgenden Jahre.

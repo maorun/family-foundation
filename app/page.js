@@ -2110,8 +2110,31 @@ export default function Home() {
             </select>
           </div>
           <div className={styles.yearList}>
-            {visibleOverviewRows.map((row) => (
-              <div key={row.year} className={styles.yearCard}>
+            {visibleOverviewRows.map((row) => {
+              const foundationEtfBalanceForVorabBase =
+                row.foundationEtfBalance - row.foundationGrossEtfReturn + row.foundationVorabTax;
+              const foundationVorabTaxableBase = Math.max(
+                0,
+                Math.min(
+                  row.foundationGrossEtfReturn,
+                  foundationEtfBalanceForVorabBase * result.input.etfBasisInterestRate * 0.7,
+                ) * (1 - result.input.foundationEtfPartialExemptionRate),
+              );
+              const compareVorabTaxByType =
+                compareType === "etfOnly"
+                  ? row.etfOnlyVorabTax
+                  : compareType === "selfUse"
+                    ? row.selfUseVorabTax
+                    : row.compareVorabTax;
+              const compareVorabTaxLabel =
+                compareType === "etfOnly"
+                  ? "Privat-Vergleich (ETF-only): Vorabpauschale"
+                  : compareType === "selfUse"
+                    ? "Privat-Vergleich (Eigennutzung): Vorabpauschale"
+                    : "Privat-Vergleich (Vermietung): Vorabpauschale";
+
+              return (
+                <div key={row.year} className={styles.yearCard}>
                 <h3 className={styles.yearCardTitle}>Jahr {row.year}</h3>
 
                 {row.propertyBoughtThisYear && (
@@ -2336,6 +2359,121 @@ export default function Home() {
                   </div>
                 </div>
 
+                <div className={styles.yearSection}>
+                    <h4 className={styles.yearSectionTitle}>Steuern im Jahr</h4>
+                    <div className={styles.guvColumns}>
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Stiftung</h5>
+                        <dl className={styles.dataGrid}>
+                          {row.year === 0 ? (
+                            <>
+                              <div className={styles.dataItem}>
+                                <dt>Schenkungssteuer bei Gründung</dt>
+                                <dd className={styles.negative}>− {formatCurrency(result.giftTax)}</dd>
+                                <small className={styles.formula}>
+                                  Stufentarif § 19 ErbStG auf max(0, {formatCurrency(result.input.initialCapital)} − {formatCurrency(result.input.giftTaxAllowance)} Freibetrag)
+                                </small>
+                              </div>
+                              {!result.deferredPurchase && (
+                                <div className={styles.dataItem}>
+                                  <dt>Grunderwerbsteuer (Gründung)</dt>
+                                  <dd className={styles.negative}>− {formatCurrency(result.realEstateTax)}</dd>
+                                  <small className={styles.formula}>
+                                    {formatPercent(result.input.realEstateTaxRate * 100)} × {formatCurrency(result.propertyValue)} (Kaufpreis)
+                                  </small>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className={styles.dataItem}>
+                                <dt>ETF-Vorabpauschale</dt>
+                                <dd className={styles.negative}>− {formatCurrency(row.foundationVorabTax)}</dd>
+                                <small className={styles.formula}>
+                                  max(0, min({formatCurrency(row.foundationGrossEtfReturn)} Brutto-Rendite, {formatCurrency(foundationEtfBalanceForVorabBase)} ETF-Bestand × 70 % × {formatPercent(result.input.etfBasisInterestRate * 100)} Basiszins) × (1 − {formatPercent(result.input.foundationEtfPartialExemptionRate * 100)} Teilfreistellung)) = {formatCurrency(foundationVorabTaxableBase)} steuerpflichtig; × {formatPercent(result.input.foundationEtfTaxRate * 100)} Steuersatz
+                                </small>
+                              </div>
+                              <div className={styles.dataItem}>
+                                <dt>Körperschaftsteuer + SolZ</dt>
+                                <dd className={styles.negative}>− {formatCurrency(row.guvKstAmount)}</dd>
+                                <small className={styles.formula}>
+                                  {formatCurrency(row.guvKstBase)} (zu versteuerndes Einkommen) × {formatPercent(KST_COMBINED_RATE * 100)}
+                                </small>
+                              </div>
+                              {row.erbsInstallmentPaid > 0 && (
+                                <div className={styles.dataItem}>
+                                  <dt>Erbersatzsteuer-Rate</dt>
+                                  <dd className={styles.negative}>− {formatCurrency(row.erbsInstallmentPaid)}</dd>
+                                  <small className={styles.formula}>
+                                    {formatCurrency(row.erbsCurrentCycleAmount)} / {ERBERSATZ_CYCLE_YEARS} Jahre
+                                  </small>
+                                </div>
+                              )}
+                              {row.distributionTax > 0 && (
+                                <div className={styles.dataItem}>
+                                  <dt>Steuer Destinatäre (Ausschüttung)</dt>
+                                  <dd className={styles.negative}>− {formatCurrency(row.distributionTax)}</dd>
+                                  <small className={styles.formula}>
+                                    max(0, {formatCurrency(row.distributionGross)} / {result.input.destinatarCount} − {formatCurrency(result.input.destinatarSaverAllowance)} Sparerpauschbetrag je Person) × {formatPercent(result.input.destinatarTaxRate * 100)} × {result.input.destinatarCount}
+                                  </small>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </dl>
+                      </div>
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Privatperson</h5>
+                        <dl className={styles.dataGrid}>
+                          {row.year === 0 ? (
+                            <div className={styles.dataItem}>
+                              <dt>Steuern</dt>
+                              <dd>{formatCurrency(0)}</dd>
+                              <small className={styles.formula}>Im Startjahr keine laufenden Privatsteuern</small>
+                            </div>
+                          ) : (
+                            <>
+                              <div className={styles.dataItem}>
+                                <dt>Einkommensteuer auf Zinsen</dt>
+                                <dd className={styles.negative}>− {formatCurrency(row.personGuvTax)}</dd>
+                                <small className={styles.formula}>
+                                  max(0, {formatCurrency(row.personGuvInterest)} − {formatCurrency(result.input.saverAllowance)}) × {formatPercent(row.personalTaxRate * 100)}
+                                </small>
+                              </div>
+                              <div className={styles.dataItem}>
+                                <dt>ETF-Vorabpauschale</dt>
+                                <dd className={styles.negative}>− {formatCurrency(row.personVorabTax)}</dd>
+                                <small className={styles.formula}>
+                                  Vorabpauschale mit {formatPercent(result.input.privateEtfPartialExemptionRate * 100)} Teilfreistellung und {formatPercent(result.input.privateEtfTaxRate * 100)} Steuersatz
+                                </small>
+                              </div>
+                            </>
+                          )}
+                        </dl>
+                      </div>
+                      <div className={styles.guvColumn}>
+                        <h5 className={styles.guvColumnTitle}>Privat-Vergleich</h5>
+                        <dl className={styles.dataGrid}>
+                          {row.year === 0 ? (
+                            <div className={styles.dataItem}>
+                              <dt>Steuern</dt>
+                              <dd>{formatCurrency(0)}</dd>
+                              <small className={styles.formula}>Im Startjahr keine laufenden Vergleichssteuern</small>
+                            </div>
+                          ) : (
+                            <div className={styles.dataItem}>
+                              <dt>{compareVorabTaxLabel}</dt>
+                              <dd className={styles.negative}>− {formatCurrency(compareVorabTaxByType)}</dd>
+                              <small className={styles.formula}>
+                                Vorabpauschale mit {formatPercent(result.input.privateEtfPartialExemptionRate * 100)} Teilfreistellung und {formatPercent(result.input.privateEtfTaxRate * 100)} Steuersatz
+                              </small>
+                            </div>
+                          )}
+                        </dl>
+                    </div>
+                  </div>
+                </div>
+
                 {row.year > 0 && (
                   <div className={styles.yearSection}>
                     <h4 className={styles.yearSectionTitle}>GuV-Rechnung</h4>
@@ -2529,7 +2667,7 @@ export default function Home() {
                   </dl>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
           <p className={styles.note}>
             Das Nettovermögen der Stiftung nutzt den Immobilienwert aus Gebäude +

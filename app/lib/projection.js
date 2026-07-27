@@ -688,8 +688,9 @@ export function applyEtfYear({
   const etfBalanceAfterInvestment = currentEtfBalance + etfCashInvestment;
   const etfContributionsAfterInvestment = currentEtfContributions + etfCashInvestment;
   const grossEtfReturn = etfBalanceAfterInvestment * returnRate;
-  const baseYieldForVorab =
-    etfBalanceAfterInvestment * basisInterestRate * ETF_VORABPAUSCHALE_BASIS_FACTOR;
+  // Per § 18 Abs. 1 InvStG the Vorabpauschale basis is the ETF value at the start of the year
+  // (i.e. the balance BEFORE any new cash investment in the current year).
+  const baseYieldForVorab = etfBalance * basisInterestRate * ETF_VORABPAUSCHALE_BASIS_FACTOR;
   const vorabGainBeforePartialExemption = Math.max(0, Math.min(grossEtfReturn, baseYieldForVorab));
   const taxableVorabGainBeforeAllowance = vorabGainBeforePartialExemption * taxableRatio;
   const taxableVorabGain = Math.max(0, taxableVorabGainBeforeAllowance - saverAllowance);
@@ -715,6 +716,7 @@ export function applyEtfYear({
     etfDeficitSaleNet,
     grossEtfReturn,
     vorabTax,
+    vorabTaxableGain: taxableVorabGain,
     taxableSaleGain,
     saleTax,
     etfLiquidationValue,
@@ -830,6 +832,8 @@ export function calculateProjection(input) {
       foundationEtfBalance,
       foundationEtfLiquidationValue: 0,
       foundationVorabTax: 0,
+      foundationVorabTaxCredit: 0,
+      foundationEtfVorabBase: 0,
       foundationEtfSaleTax: 0,
       foundationEtfDeficitSaleGross: 0,
       foundationEtfDeficitSaleTax: 0,
@@ -1257,6 +1261,23 @@ export function calculateProjection(input) {
       foundationCash -= distributionGross;
     }
 
+    // Vorabpauschale Verlustvortrag: Verbleibender Verlustvortrag wird gegen steuerpflichtige
+    // Vorabpauschale-Einkünfte verrechnet (§ 10d EStG i.V.m. § 8 KStG).
+    // Schätzung auf Basis des aktuellen ETF-Bestands vor Jahresrendite (stimmt exakt bei
+    // typischen Renditen über dem Basisertrag, da dann der Basisertrag die Obergrenze ist).
+    // In Randfällen (Rendite < Basisertrag) kann die Schätzung den tatsächlichen Wert
+    // leicht übersteigen; der tatsächlich genutzte Anteil wird nach applyEtfYear korrigiert.
+    const foundationEtfVorabBase = foundationEtfBalance;
+    const foundationVorabTaxableGainEst = Math.max(
+      0,
+      Math.min(
+        foundationEtfBalance * input.etfReturnRate,
+        foundationEtfBalance * input.etfBasisInterestRate * ETF_VORABPAUSCHALE_BASIS_FACTOR,
+      ) * (1 - input.foundationEtfPartialExemptionRate),
+    );
+    const foundationVorabCarryforwardUsed = Math.min(taxLossCarryforward, foundationVorabTaxableGainEst);
+    taxLossCarryforward -= foundationVorabCarryforwardUsed;
+
     const foundationEtf = applyEtfYear({
       cash: foundationCash,
       etfBalance: foundationEtfBalance,
@@ -1268,7 +1289,14 @@ export function calculateProjection(input) {
       partialExemptionRate: input.foundationEtfPartialExemptionRate,
     });
     foundationCash = foundationEtf.cashAfterInvestment;
-    foundationEtfBalance = foundationEtf.etfBalanceAfterTax;
+    // Anpassen des Verlustvortrags auf den tatsächlich genutzten Anteil (für Randfall: Schätzung > Ist).
+    const actualFoundationVorabCarryforwardUsed = Math.min(
+      foundationVorabCarryforwardUsed,
+      foundationEtf.vorabTaxableGain,
+    );
+    taxLossCarryforward += foundationVorabCarryforwardUsed - actualFoundationVorabCarryforwardUsed;
+    const foundationVorabTaxCredit = actualFoundationVorabCarryforwardUsed * input.foundationEtfTaxRate;
+    foundationEtfBalance = foundationEtf.etfBalanceAfterTax + foundationVorabTaxCredit;
     foundationEtfContributions = foundationEtf.etfContributionsAfterInvestment;
     foundationEtfTaxedGains = foundationEtf.etfTaxedGainsAfterYear;
 
@@ -1412,7 +1440,9 @@ export function calculateProjection(input) {
       foundationEtfDeficitSaleNet: foundationEtf.etfDeficitSaleNet,
       foundationEtfTaxableSaleGain: foundationEtf.taxableSaleGain,
       foundationGrossEtfReturn: foundationEtf.grossEtfReturn,
-      foundationVorabTax: foundationEtf.vorabTax,
+      foundationEtfVorabBase: foundationEtfVorabBase,
+      foundationVorabTax: foundationEtf.vorabTax - foundationVorabTaxCredit,
+      foundationVorabTaxCredit: foundationVorabTaxCredit,
       foundationEtfSaleTax: foundationEtf.saleTax,
       foundationCashFlow,
       taxableResult,

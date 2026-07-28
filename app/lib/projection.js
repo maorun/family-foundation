@@ -980,6 +980,7 @@ export function calculateProjection(input) {
     let extraRepayment = 0;
     let lenderTax = 0;
     let lenderNetCashFlow = 0;
+    let effectiveInterestAllowanceUsed = 0;
     let personRentPaidFromAssets = 0;
     let maintenanceCashOut = 0;
     let maintenanceFullDeduction = 0;
@@ -1079,12 +1080,28 @@ export function calculateProjection(input) {
       }
 
       const interestAllowanceUsed = Math.min(annualInterest, input.saverAllowance);
-      lenderTax = (annualInterest - interestAllowanceUsed) * yearPersonalTaxRate;
-      lenderNetCashFlow =
-        scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
+      const currentYearInterestTax = (annualInterest - interestAllowanceUsed) * yearPersonalTaxRate;
 
       personCumulativeGrossInterest += annualInterest;
-      personCumulativeInterestTax += lenderTax;
+      personCumulativeInterestTax += currentYearInterestTax;
+
+      if (input.bulletLoan && !isBulletRepaymentYear) {
+        // Endfälliges Darlehen: Einkommensteuer auf Zinsen wird bis zum Laufzeitende gestundet;
+        // der Darlehensgeber zahlt innerhalb der Laufzeit keine Einkommensteuer auf Zinsen.
+        lenderTax = 0;
+        effectiveInterestAllowanceUsed = 0;
+      } else if (input.bulletLoan && isBulletRepaymentYear) {
+        // Am Laufzeitende: gesamte aufgelaufene Einkommensteuer auf Zinsen (inkl. laufendem Jahr)
+        // wird als Einmalbetrag fällig.
+        lenderTax = personCumulativeInterestTax;
+        effectiveInterestAllowanceUsed = interestAllowanceUsed;
+      } else {
+        lenderTax = currentYearInterestTax;
+        effectiveInterestAllowanceUsed = interestAllowanceUsed;
+      }
+
+      lenderNetCashFlow =
+        scheduledRepayment + extraRepayment + (annualInterest - lenderTax);
 
       foundationCash = availableCashBeforeRepayment - scheduledRepayment - extraRepayment;
       remainingLoan -= scheduledRepayment + extraRepayment;
@@ -1316,8 +1333,7 @@ export function calculateProjection(input) {
       personCumulativeInterestTax = 0;
     }
 
-    const interestAllowanceUsed = Math.min(annualInterest, input.saverAllowance);
-    const personEtfSaverAllowance = input.saverAllowance - interestAllowanceUsed;
+    const personEtfSaverAllowance = input.saverAllowance - effectiveInterestAllowanceUsed;
     const personEtf = applyEtfYear({
       cash: personCash,
       etfBalance: personEtfBalance,

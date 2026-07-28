@@ -67,7 +67,9 @@ function normalizeConfig(rawConfig = {}) {
     ? rawConfig.personalTaxSteps
     : DEFAULT_PERSONAL_TAX_STEPS;
   const maintenanceEvents = Array.isArray(rawConfig.maintenanceEvents)
-    ? rawConfig.maintenanceEvents
+    ? rawConfig.maintenanceEvents.map((evt) =>
+        evt.type === "afa" ? { ...evt, type: "spread", spreadYears: "5" } : evt,
+      )
     : [];
 
   return {
@@ -1975,7 +1977,7 @@ export default function Home() {
               <span className={styles.fieldLabel}>Ereignisse: Instandhaltung</span>
               <p className={styles.hint}>
                 Einmalige Instandhaltungskosten eintragen, die in einem bestimmten Jahr anfallen.
-                Wählen Sie, ob die Kosten steuerlich voll abzugsfähig sind oder über 2 % AfA abgeschrieben werden.
+                Wählen Sie, ob die Kosten steuerlich sofort voll abzugsfähig sind oder gemäß § 82b EStDV gleichmäßig auf bis zu 5 Jahre verteilt werden.
                 Eine Umlage auf den Mieter ist nicht vorgesehen.
               </p>
               {maintenanceEvents.map((evt, index) => {
@@ -2019,9 +2021,26 @@ export default function Home() {
                         className={styles.fieldInput}
                       >
                         <option value="full">Voll abzugsfähig (Sofortabzug)</option>
-                        <option value="afa">2 % AfA (Abschreibung)</option>
+                        <option value="spread">Verteilung auf bis zu 5 Jahre (§ 82b EStDV)</option>
                       </select>
                     </div>
+                    {evt.type === "spread" && (
+                      <div className={styles.taxStepField}>
+                        <label htmlFor={`maintSpreadYears_${index}`} className={styles.taxStepLabel}>Verteilungsjahre (1–5)</label>
+                        <input
+                          id={`maintSpreadYears_${index}`}
+                          type="number"
+                          min="1"
+                          max="5"
+                          step="1"
+                          value={evt.spreadYears ?? "5"}
+                          onChange={(event) => handleMaintenanceEventChange(index, "spreadYears", event.target.value)}
+                          className={`${styles.fieldInput} ${isInvalid ? styles.fieldInputInvalid : ""}`.trim()}
+                          aria-invalid={isInvalid}
+                          required
+                        />
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleRemoveMaintenanceEvent(index)}
@@ -2034,7 +2053,7 @@ export default function Home() {
               })}
               {hasInvalidMaintenanceEvents && (
                 <p className={styles.validationMessage}>
-                  Bitte korrigieren Sie die rot markierten Instandhaltungseinträge (Jahr ≥ 1, Betrag &gt; 0).
+                  Bitte korrigieren Sie die rot markierten Instandhaltungseinträge (Jahr ≥ 1, Betrag &gt; 0, Verteilungsjahre 1–5).
                 </p>
               )}
               <button
@@ -2462,8 +2481,8 @@ export default function Home() {
                             <dd className={styles.negative}>{formatCurrency(row.compareMaintenanceCashOut)}</dd>
                             <small className={styles.formula}>
                               {row.compareMaintenanceFullDeduction > 0 && `${formatCurrency(row.compareMaintenanceFullDeduction)} voll abzugsfähig`}
-                              {row.compareMaintenanceFullDeduction > 0 && row.compareMaintenanceAfaAddition > 0 && "; "}
-                              {row.compareMaintenanceAfaAddition > 0 && `${formatCurrency(row.compareMaintenanceAfaAddition)} AfA-aktiviert`}
+                              {row.compareMaintenanceFullDeduction > 0 && row.compareMaintenanceSpreadDeduction > 0 && "; "}
+                              {row.compareMaintenanceSpreadDeduction > 0 && `${formatCurrency(row.compareMaintenanceSpreadDeduction)} verteilt abgezogen (§ 82b EStDV)`}
                               {row.compareMaintenanceEtfSaleGross > 0 && `; ETF-Verkauf ${formatCurrency(row.compareMaintenanceEtfSaleGross)} (Steuer ${formatCurrency(row.compareMaintenanceEtfSaleTax)}, Netto ${formatCurrency(row.compareMaintenanceEtfSaleNet)})`}
                             </small>
                           </div>
@@ -2640,17 +2659,17 @@ export default function Home() {
                             <dt>AfA</dt>
                             <dd>{formatCurrency(row.guvDepreciation)}</dd>
                             {row.propertyOwned && (
-                              <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz){row.guvMaintenanceAfaAddition > 0 ? ` + ${formatCurrency(row.guvMaintenanceAfaAddition)} (neue AfA-Basis Instandhaltung)` : ""}</small>
+                              <small className={styles.formula}>{formatCurrency(result.depreciableBuildingBase)} (Gebäude inkl. GrESt-Anteil) × {formatPercent(result.input.depreciationRate * 100)} (AfA-Satz)</small>
                             )}
                           </div>
-                          {row.guvMaintenanceCashOut > 0 && (
+                          {(row.guvMaintenanceCashOut > 0 || row.guvMaintenanceSpreadDeduction > 0) && (
                             <div className={styles.dataItem}>
                               <dt>Instandhaltung</dt>
                               <dd className={styles.negative}>{formatCurrency(row.guvMaintenanceCashOut)}</dd>
                               <small className={styles.formula}>
                                 {row.guvMaintenanceFullDeduction > 0 && `${formatCurrency(row.guvMaintenanceFullDeduction)} voll abzugsfähig`}
-                                {row.guvMaintenanceFullDeduction > 0 && row.guvMaintenanceAfaAddition > 0 && "; "}
-                                {row.guvMaintenanceAfaAddition > 0 && `${formatCurrency(row.guvMaintenanceAfaAddition)} AfA-aktiviert (Abschreibung über Folgejahre)`}
+                                {row.guvMaintenanceFullDeduction > 0 && row.guvMaintenanceSpreadDeduction > 0 && "; "}
+                                {row.guvMaintenanceSpreadDeduction > 0 && `${formatCurrency(row.guvMaintenanceSpreadDeduction)} verteilt abgezogen (§ 82b EStDV)`}
                               </small>
                             </div>
                           )}
@@ -2659,7 +2678,7 @@ export default function Home() {
                             <dd className={row.guvResult < 0 ? styles.negative : styles.positive}>
                               {formatCurrency(row.guvResult)}
                             </dd>
-                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA){row.guvMaintenanceFullDeduction > 0 ? ` − ${formatCurrency(row.guvMaintenanceFullDeduction)} (Instandhaltung Sofortabzug)` : ""}</small>
+                            <small className={styles.formula}>{formatCurrency(row.guvRent)} (Mieteinnahmen) − {formatCurrency(row.guvAdminCost)} (Verwaltungskosten) − {formatCurrency(row.guvInterest)} (Zinsen) − {formatCurrency(row.guvDepreciation)} (AfA){row.guvMaintenanceFullDeduction > 0 ? ` − ${formatCurrency(row.guvMaintenanceFullDeduction)} (Instandhaltung Sofortabzug)` : ""}{row.guvMaintenanceSpreadDeduction > 0 ? ` − ${formatCurrency(row.guvMaintenanceSpreadDeduction)} (Instandhaltung verteilt)` : ""}</small>
                           </div>
                           {row.year > 0 && row.guvKstUsedCarryforward > 0 && (
                             <div className={styles.dataItem}>

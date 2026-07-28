@@ -555,12 +555,19 @@ export function validateMaintenanceEvents(events) {
     let valid = true;
     if (year === null || !Number.isInteger(year) || year < 1) valid = false;
     if (amount === null || amount < 0.01) valid = false;
-    if (evt.type !== "full" && evt.type !== "afa") valid = false;
+    if (evt.type !== "full" && evt.type !== "spread") valid = false;
+
+    let spreadYears = 5;
+    if (evt.type === "spread") {
+      const sy = parseNumber(String(evt.spreadYears ?? "5"));
+      if (sy === null || !Number.isInteger(sy) || sy < 1 || sy > 5) valid = false;
+      else spreadYears = sy;
+    }
 
     if (!valid) {
       invalidIndices.push(i);
     } else {
-      parsed.push({ year, amount, type: evt.type });
+      parsed.push({ year, amount, type: evt.type, spreadYears });
     }
   }
 
@@ -984,7 +991,7 @@ export function calculateProjection(input) {
     let personRentPaidFromAssets = 0;
     let maintenanceCashOut = 0;
     let maintenanceFullDeduction = 0;
-    let maintenanceAfaAddition = 0;
+    let maintenanceSpreadDeduction = 0;
     let maintenanceEtfSaleGross = 0;
     let maintenanceEtfSaleTax = 0;
     let maintenanceEtfSaleNet = 0;
@@ -1006,11 +1013,14 @@ export function calculateProjection(input) {
         maintenanceCashOut += evt.amount;
         if (evt.type === "full") {
           maintenanceFullDeduction += evt.amount;
-        } else {
-          // AfA-qualifying maintenance: added to depreciable base
-          maintenanceAfaAddition += evt.amount;
-          effectiveDepreciableBase += evt.amount;
-          remainingDepreciableBuildingValue += evt.amount;
+        }
+        // "spread" events are handled below via the spread-deduction accumulator
+      }
+
+      // Accumulate spread deductions from all spread maintenance events active in this year
+      for (const evt of (input.maintenanceEvents ?? [])) {
+        if (evt.type === "spread" && year >= evt.year && year < evt.year + evt.spreadYears) {
+          maintenanceSpreadDeduction += evt.amount / evt.spreadYears;
         }
       }
 
@@ -1047,7 +1057,8 @@ export function calculateProjection(input) {
         yearlyAdminCost -
         annualInterest -
         annualDepreciation -
-        maintenanceFullDeduction;
+        maintenanceFullDeduction -
+        maintenanceSpreadDeduction;
       // Operativer Liquiditätsüberschuss (ohne Tilgung, da Tilgung eine
       // reine Bilanzumschichtung ist und die operative Liquidität nicht mindert)
       foundationCashFlow =
@@ -1141,7 +1152,7 @@ export function calculateProjection(input) {
     // Vergleichsszenario: Privatvermietung – Instandhaltungsereignisse
     let privateMaintCashOut = 0;
     let privateMaintFullDeduction = 0;
-    let privateMaintAfaAddition = 0;
+    let privateMaintSpreadDeduction = 0;
     let privateMaintEtfSaleGross = 0;
     let privateMaintEtfSaleTax = 0;
     let privateMaintEtfSaleNet = 0;
@@ -1150,10 +1161,14 @@ export function calculateProjection(input) {
       privateMaintCashOut += evt.amount;
       if (evt.type === "full") {
         privateMaintFullDeduction += evt.amount;
-      } else {
-        privateMaintAfaAddition += evt.amount;
-        privateEffectiveDepreciableBase += evt.amount;
-        privateRemainingDepreciableBuilding += evt.amount;
+      }
+      // "spread" events are handled below
+    }
+
+    // Accumulate spread deductions from all spread maintenance events active in this year
+    for (const evt of (input.maintenanceEvents ?? [])) {
+      if (evt.type === "spread" && year >= evt.year && year < evt.year + evt.spreadYears) {
+        privateMaintSpreadDeduction += evt.amount / evt.spreadYears;
       }
     }
 
@@ -1184,7 +1199,7 @@ export function calculateProjection(input) {
       privateRemainingDepreciableBuilding,
       privateEffectiveDepreciableBase * input.depreciationRate,
     );
-    const privateTaxableRentalIncome = yearlyRent - privateDepreciation - privateMaintFullDeduction;
+    const privateTaxableRentalIncome = yearlyRent - privateDepreciation - privateMaintFullDeduction - privateMaintSpreadDeduction;
     const privateIncomeTax = privateTaxableRentalIncome * yearPersonalTaxRate;
     privateCash += yearlyRent - privateIncomeTax;
     privateRemainingDepreciableBuilding = Math.max(
@@ -1487,7 +1502,7 @@ export function calculateProjection(input) {
       guvResult: taxableResult,
       guvMaintenanceCashOut: maintenanceCashOut,
       guvMaintenanceFullDeduction: maintenanceFullDeduction,
-      guvMaintenanceAfaAddition: maintenanceAfaAddition,
+      guvMaintenanceSpreadDeduction: maintenanceSpreadDeduction,
       guvMaintenanceEtfSaleGross: maintenanceEtfSaleGross,
       guvMaintenanceEtfSaleTax: maintenanceEtfSaleTax,
       guvMaintenanceEtfSaleNet: maintenanceEtfSaleNet,
@@ -1532,7 +1547,7 @@ export function calculateProjection(input) {
       compareEtfSaleTax: compareEtf.saleTax,
       compareMaintenanceCashOut: privateMaintCashOut,
       compareMaintenanceFullDeduction: privateMaintFullDeduction,
-      compareMaintenanceAfaAddition: privateMaintAfaAddition,
+      compareMaintenanceSpreadDeduction: privateMaintSpreadDeduction,
       compareMaintenanceEtfSaleGross: privateMaintEtfSaleGross,
       compareMaintenanceEtfSaleTax: privateMaintEtfSaleTax,
       compareMaintenanceEtfSaleNet: privateMaintEtfSaleNet,

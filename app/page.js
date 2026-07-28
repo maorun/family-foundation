@@ -2696,10 +2696,27 @@ export default function Home() {
                               <small className={styles.formula}>Kein Darlehen ausstehend</small>
                             )}
                           </div>
+                          {result.input.bulletLoan && row.year > 0 && row.propertyOwned && (row.remainingLoan > 0 || row.scheduledRepayment > 0) && (
+                            <div className={styles.dataItem}>
+                              <dt>Aufgestaute Zinsen (kumuliert)</dt>
+                              <dd>{formatCurrency(row.personCumulativeGrossInterest)}</dd>
+                              <small className={styles.formula}>Summe der Zinserträge bis Laufzeitende des endfälligen Darlehens</small>
+                            </div>
+                          )}
                           <div className={styles.dataItem}>
                             <dt>Einkommensteuer auf Zinsen</dt>
                             <dd>{formatCurrency(row.personGuvTax)}</dd>
-                            <small className={styles.formula}>max(0, {formatCurrency(row.personGuvInterest)} (Zinserträge) − {formatCurrency(result.input.saverAllowance)} (Sparerpauschbetrag)) × {formatPercent(row.personalTaxRate * 100)} (Steuersatz)</small>
+                            {result.input.bulletLoan && row.year > 0 && row.propertyOwned && row.scheduledRepayment === 0 ? (
+                              <small className={styles.formula}>
+                                Endfälliges Darlehen: Steuer auf Zinsen ist gestundet; bisher aufgelaufen {formatCurrency(row.personCumulativeInterestTax)}, Fälligkeit in Jahr {result.input.loanTermYears}
+                              </small>
+                            ) : result.input.bulletLoan && row.year > 0 && row.propertyOwned && row.scheduledRepayment > 0 ? (
+                              <small className={styles.formula}>
+                                Endfälliges Darlehen: Einmalzahlung der kumulierten Steuer auf Zinsen bis Laufzeitende
+                              </small>
+                            ) : (
+                              <small className={styles.formula}>max(0, {formatCurrency(row.personGuvInterest)} (Zinserträge) − {formatCurrency(result.input.saverAllowance)} (Sparerpauschbetrag)) × {formatPercent(row.personalTaxRate * 100)} (Steuersatz)</small>
+                            )}
                           </div>
                           <div className={`${styles.dataItem} ${styles.dataItemResult}`}>
                             <dt>Netto-Zinsergebnis</dt>

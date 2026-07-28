@@ -11,6 +11,7 @@ import {
   getEffectiveFormValues,
   getRelationshipOption,
   validateFormValues,
+  validateMaintenanceEvents,
   validatePersonalTaxSteps,
 } from "./projection";
 
@@ -530,5 +531,139 @@ describe("inflation rate", () => {
     expect(inflatedResult.rows[lastYear].foundationWealth).toBeGreaterThan(
       baseResult.rows[lastYear].foundationWealth,
     );
+  });
+});
+
+describe("validateMaintenanceEvents", () => {
+  it("accepts full type events", () => {
+    const { invalidIndices, parsedEvents } = validateMaintenanceEvents([
+      { year: "2", amount: "3000", type: "full" },
+    ]);
+    expect(invalidIndices).toEqual([]);
+    expect(parsedEvents).toHaveLength(1);
+    expect(parsedEvents[0]).toMatchObject({ year: 2, amount: 3000, type: "full" });
+  });
+
+  it("accepts spread type with valid spreadYears", () => {
+    const { invalidIndices, parsedEvents } = validateMaintenanceEvents([
+      { year: "3", amount: "5000", type: "spread", spreadYears: "3" },
+    ]);
+    expect(invalidIndices).toEqual([]);
+    expect(parsedEvents[0]).toMatchObject({ year: 3, amount: 5000, type: "spread", spreadYears: 3 });
+  });
+
+  it("defaults spreadYears to 5 when omitted for spread type", () => {
+    const { invalidIndices, parsedEvents } = validateMaintenanceEvents([
+      { year: "1", amount: "1000", type: "spread" },
+    ]);
+    expect(invalidIndices).toEqual([]);
+    expect(parsedEvents[0].spreadYears).toBe(5);
+  });
+
+  it("rejects spread type with spreadYears > 5", () => {
+    const { invalidIndices } = validateMaintenanceEvents([
+      { year: "1", amount: "1000", type: "spread", spreadYears: "6" },
+    ]);
+    expect(invalidIndices).toEqual([0]);
+  });
+
+  it("rejects spread type with spreadYears < 1", () => {
+    const { invalidIndices } = validateMaintenanceEvents([
+      { year: "1", amount: "1000", type: "spread", spreadYears: "0" },
+    ]);
+    expect(invalidIndices).toEqual([0]);
+  });
+
+  it("rejects afa type (removed)", () => {
+    const { invalidIndices } = validateMaintenanceEvents([
+      { year: "1", amount: "1000", type: "afa" },
+    ]);
+    expect(invalidIndices).toEqual([0]);
+  });
+});
+
+describe("spread maintenance deduction", () => {
+  // Overrides that guarantee immediate property ownership with no inflation or loan.
+  const baseOverrides = {
+    initialCapital: "1000000",
+    foundationSetupCost: "0",
+    loanAmount: "0",
+    buildingValue: "200000",
+    landValue: "0",
+    realEstateTaxRate: "0",
+    depreciationRate: "2",
+    monthlyRent: "0",
+    annualAdminCost: "0",
+    inflationRate: "0",
+    projectionYears: "10",
+    saverAllowance: "0",
+  };
+
+  function buildInputWithMaintenance(maintenanceEvents) {
+    const values = { ...DEFAULT_FORM_VALUES, ...baseOverrides };
+    const validation = validateFormValues(getEffectiveFormValues(values, true), false);
+    const taxValidation = validatePersonalTaxSteps(DEFAULT_PERSONAL_TAX_STEPS);
+    if (!validation.input || !taxValidation.parsedSteps) {
+      throw new Error("inputs must be valid");
+    }
+    return createProjectionInput(
+      validation.input,
+      getRelationshipOption(DEFAULT_RELATIONSHIP_ID),
+      false,
+      taxValidation.parsedSteps,
+      false,
+      false,
+      false,
+      false,
+      maintenanceEvents,
+    );
+  }
+
+  it("spread over 5 years deducts 1/5 of amount each year for 5 years", () => {
+    const events = [{ year: 1, amount: 5000, type: "spread", spreadYears: 5 }];
+    const input = buildInputWithMaintenance(events);
+    const result = calculateProjection(input);
+
+    expect(result.rows[1].guvMaintenanceSpreadDeduction).toBeCloseTo(1000, 2);
+    expect(result.rows[2].guvMaintenanceSpreadDeduction).toBeCloseTo(1000, 2);
+    expect(result.rows[3].guvMaintenanceSpreadDeduction).toBeCloseTo(1000, 2);
+    expect(result.rows[4].guvMaintenanceSpreadDeduction).toBeCloseTo(1000, 2);
+    expect(result.rows[5].guvMaintenanceSpreadDeduction).toBeCloseTo(1000, 2);
+    expect(result.rows[6].guvMaintenanceSpreadDeduction).toBeCloseTo(0, 2);
+  });
+
+  it("spread over 1 year deducts full amount only in the event year", () => {
+    const events = [{ year: 2, amount: 6000, type: "spread", spreadYears: 1 }];
+    const input = buildInputWithMaintenance(events);
+    const result = calculateProjection(input);
+
+    expect(result.rows[1].guvMaintenanceSpreadDeduction).toBeCloseTo(0, 2);
+    expect(result.rows[2].guvMaintenanceSpreadDeduction).toBeCloseTo(6000, 2);
+    expect(result.rows[3].guvMaintenanceSpreadDeduction).toBeCloseTo(0, 2);
+  });
+
+  it("spread deduction reduces taxableResult (guvResult) in each spread year", () => {
+    const events = [{ year: 1, amount: 3000, type: "spread", spreadYears: 3 }];
+    const input = buildInputWithMaintenance(events);
+    const result = calculateProjection(input);
+
+    // rent = 0, adminCost = 0, interest = 0, depreciation = building * 2%
+    const depreciation = 200000 * 0.02;
+    const spreadPortion = 3000 / 3;
+    expect(result.rows[1].guvResult).toBeCloseTo(-depreciation - spreadPortion, 2);
+    expect(result.rows[2].guvResult).toBeCloseTo(-depreciation - spreadPortion, 2);
+    expect(result.rows[3].guvResult).toBeCloseTo(-depreciation - spreadPortion, 2);
+    expect(result.rows[4].guvResult).toBeCloseTo(-depreciation, 2);
+  });
+
+  it("full type deducts entire amount in the event year only", () => {
+    const events = [{ year: 2, amount: 4000, type: "full", spreadYears: 5 }];
+    const input = buildInputWithMaintenance(events);
+    const result = calculateProjection(input);
+
+    expect(result.rows[1].guvMaintenanceFullDeduction).toBeCloseTo(0, 2);
+    expect(result.rows[2].guvMaintenanceFullDeduction).toBeCloseTo(4000, 2);
+    expect(result.rows[3].guvMaintenanceFullDeduction).toBeCloseTo(0, 2);
+    expect(result.rows[2].guvMaintenanceSpreadDeduction).toBeCloseTo(0, 2);
   });
 });

@@ -3,6 +3,7 @@ import {
   DEFAULT_FORM_VALUES,
   DEFAULT_PERSONAL_TAX_STEPS,
   DEFAULT_RELATIONSHIP_ID,
+  FIELD_DEFINITIONS,
   applyEtfYear,
   calculateGiftTaxByBrackets,
   calculateProjection,
@@ -665,5 +666,45 @@ describe("spread maintenance deduction", () => {
     expect(result.rows[2].guvMaintenanceFullDeduction).toBeCloseTo(4000, 2);
     expect(result.rows[3].guvMaintenanceFullDeduction).toBeCloseTo(0, 2);
     expect(result.rows[2].guvMaintenanceSpreadDeduction).toBeCloseTo(0, 2);
+  });
+});
+
+describe("etfCostRatio", () => {
+  it("includes etfCostRatio in FIELD_DEFINITIONS with default value 0", () => {
+    const field = FIELD_DEFINITIONS.find((f) => f.id === "etfCostRatio");
+    expect(field).toBeDefined();
+    expect(field.defaultValue).toBe(0);
+    expect(field.min).toBe(0);
+  });
+
+  it("reduces ETF return and final balance when cost ratio is applied in applyEtfYear", () => {
+    const baseResult = applyEtfYear({
+      cash: 0,
+      etfBalance: 10000,
+      etfContributions: 10000,
+      etfTaxedGains: 0,
+      returnRate: 0.05,
+      costRatio: 0,
+      basisInterestRate: 0,
+      taxRate: 0.25,
+      partialExemptionRate: 0.3,
+      saverAllowance: 0,
+    });
+
+    const costResult = applyEtfYear({
+      cash: 0,
+      etfBalance: 10000,
+      etfContributions: 10000,
+      etfTaxedGains: 0,
+      returnRate: 0.05,
+      costRatio: 0.005, // 0.5% TER
+      basisInterestRate: 0,
+      taxRate: 0.25,
+      partialExemptionRate: 0.3,
+      saverAllowance: 0,
+    });
+
+    expect(costResult.grossEtfReturn).toBeLessThan(baseResult.grossEtfReturn);
+    expect(costResult.etfBalanceAfterTax).toBeLessThan(baseResult.etfBalanceAfterTax);
   });
 });

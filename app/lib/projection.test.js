@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { metadata, viewport } from "../layout";
 import {
   DEFAULT_FORM_VALUES,
   DEFAULT_PERSONAL_TAX_STEPS,
@@ -706,5 +707,28 @@ describe("etfCostRatio", () => {
 
     expect(costResult.grossEtfReturn).toBeLessThan(baseResult.grossEtfReturn);
     expect(costResult.etfBalanceAfterTax).toBeLessThan(baseResult.etfBalanceAfterTax);
+  });
+});
+
+describe("Layout metadata and viewport configuration", () => {
+  it("defines core metadata properties", () => {
+    expect(metadata.title).toBe("Familienstiftung-Rechner");
+    expect(metadata.description).toBeTypeOf("string");
+    expect(metadata.applicationName).toBe("Familienstiftung-Rechner");
+    expect(metadata.manifest).toBe("/manifest.webmanifest");
+    expect(metadata.icons).toBeDefined();
+    expect(metadata.icons.icon).toHaveLength(2);
+    expect(metadata.appleWebApp.capable).toBe(true);
+    expect(metadata.openGraph).toBeDefined();
+    expect(metadata.openGraph.type).toBe("website");
+    expect(metadata.twitter).toBeDefined();
+    expect(metadata.robots.index).toBe(true);
+    expect(metadata.keywords).toContain("Familienstiftung");
+  });
+
+  it("defines viewport configuration", () => {
+    expect(viewport.themeColor).toBe("#0f4c81");
+    expect(viewport.width).toBe("device-width");
+    expect(viewport.initialScale).toBe(1);
   });
 });

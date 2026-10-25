@@ -108,6 +108,14 @@ export const FIELD_DEFINITIONS = [
     defaultValue: 5,
   },
   {
+    id: "etfCostRatio",
+    label: "ETF-Kostenquote (TER) p.a. (%)",
+    min: 0,
+    max: 5,
+    step: "0.01",
+    defaultValue: 0,
+  },
+  {
     id: "etfBasisInterestRate",
     label: "Gesetzlicher Basiszins (Vorabpauschale) p.a. (%)",
     min: 0,
@@ -468,6 +476,7 @@ export function validateFormValues(formValues, bulletLoan = false) {
       monthlyRent: parsedValues.monthlyRent,
       depreciationRate: parsedValues.depreciationRate / 100,
       etfReturnRate: parsedValues.etfReturnRate / 100,
+      etfCostRatio: parsedValues.etfCostRatio / 100,
       etfBasisInterestRate: parsedValues.etfBasisInterestRate / 100,
       foundationEtfTaxRate: parsedValues.foundationEtfTaxRate / 100,
       foundationEtfPartialExemptionRate: FOUNDATION_ETF_PARTIAL_EXEMPTION_RATE,
@@ -658,12 +667,14 @@ export function applyEtfYear({
   etfContributions,
   etfTaxedGains,
   returnRate,
+  costRatio = 0,
   basisInterestRate = 0,
   taxRate,
   partialExemptionRate,
   saverAllowance = 0,
 }) {
   const taxableRatio = Math.max(0, 1 - partialExemptionRate);
+  const netReturnRate = Math.max(0, returnRate - costRatio);
   let currentCash = cash;
   let currentEtfBalance = etfBalance;
   let currentEtfContributions = etfContributions;
@@ -694,7 +705,7 @@ export function applyEtfYear({
   const cashAfterInvestment = currentCash - etfCashInvestment;
   const etfBalanceAfterInvestment = currentEtfBalance + etfCashInvestment;
   const etfContributionsAfterInvestment = currentEtfContributions + etfCashInvestment;
-  const grossEtfReturn = etfBalanceAfterInvestment * returnRate;
+  const grossEtfReturn = etfBalanceAfterInvestment * netReturnRate;
   // Per § 18 Abs. 1 InvStG the Vorabpauschale basis is the ETF value at the start of the year
   // (i.e. the balance BEFORE any new cash investment in the current year).
   const baseYieldForVorab = etfBalance * basisInterestRate * ETF_VORABPAUSCHALE_BASIS_FACTOR;
@@ -1316,6 +1327,7 @@ export function calculateProjection(input) {
       etfContributions: foundationEtfContributions,
       etfTaxedGains: foundationEtfTaxedGains,
       returnRate: input.etfReturnRate,
+      costRatio: input.etfCostRatio ?? 0,
       basisInterestRate: input.etfBasisInterestRate,
       taxRate: input.foundationEtfTaxRate,
       partialExemptionRate: input.foundationEtfPartialExemptionRate,
@@ -1355,6 +1367,7 @@ export function calculateProjection(input) {
       etfContributions: personEtfContributions,
       etfTaxedGains: personEtfTaxedGains,
       returnRate: input.etfReturnRate,
+      costRatio: input.etfCostRatio ?? 0,
       basisInterestRate: input.etfBasisInterestRate,
       taxRate: input.privateEtfTaxRate,
       partialExemptionRate: input.privateEtfPartialExemptionRate,
@@ -1371,6 +1384,7 @@ export function calculateProjection(input) {
       etfContributions: compareEtfContributions,
       etfTaxedGains: compareEtfTaxedGains,
       returnRate: input.etfReturnRate,
+      costRatio: input.etfCostRatio ?? 0,
       basisInterestRate: input.etfBasisInterestRate,
       taxRate: input.privateEtfTaxRate,
       partialExemptionRate: input.privateEtfPartialExemptionRate,
@@ -1387,6 +1401,7 @@ export function calculateProjection(input) {
       etfContributions: etfOnlyEtfContributions,
       etfTaxedGains: etfOnlyEtfTaxedGains,
       returnRate: input.etfReturnRate,
+      costRatio: input.etfCostRatio ?? 0,
       basisInterestRate: input.etfBasisInterestRate,
       taxRate: input.privateEtfTaxRate,
       partialExemptionRate: input.privateEtfPartialExemptionRate,
@@ -1450,6 +1465,7 @@ export function calculateProjection(input) {
       etfContributions: selfUseEtfContributions,
       etfTaxedGains: selfUseEtfTaxedGains,
       returnRate: input.etfReturnRate,
+      costRatio: input.etfCostRatio ?? 0,
       basisInterestRate: input.etfBasisInterestRate,
       taxRate: input.privateEtfTaxRate,
       partialExemptionRate: input.privateEtfPartialExemptionRate,

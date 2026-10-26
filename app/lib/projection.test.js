@@ -21,6 +21,7 @@ describe("calculateGiftTaxByBrackets", () => {
   it("returns 0 for zero or negative taxable amount", () => {
     expect(calculateGiftTaxByBrackets(0, "I")).toBe(0);
     expect(calculateGiftTaxByBrackets(-1000, "I")).toBe(0);
+    expect(calculateGiftTaxByBrackets(-50_000, "II")).toBe(0);
   });
 
   it("applies lowest bracket rate for amounts within first bracket (class I)", () => {

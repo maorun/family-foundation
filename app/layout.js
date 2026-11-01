@@ -7,6 +7,13 @@ export const metadata = {
     "Offline-fähiger PWA-Rechner für eine Familienstiftung mit Darlehen, Miete und AfA.",
   applicationName: "Familienstiftung-Rechner",
   authors: [{ name: "Familienstiftung" }],
+  creator: "Familienstiftung",
+  publisher: "Familienstiftung",
+  category: "Finanzen",
+  classification: "Finanzplanung und Vermögensverwaltung",
+  formatDetection: {
+    telephone: false,
+  },
   generator: "Next.js",
   keywords: [
     "Familienstiftung",
